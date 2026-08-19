@@ -1,0 +1,66 @@
+@import url("../../.cache/wal/colors-waybar.css");
+@define-color bg @background;
+@define-color bg1 @color0;
+@define-color fg @foreground;
+@define-color blue @color4;
+* {
+  border: none;
+  border-radius: 0;
+  font-family: "Terminus", "JetBrainsMono Nerd Font";
+  font-size: 13px;
+  font-weight: 800;
+}
+window#waybar {
+  background-color: @bg;
+  border-top: 3px solid @color6;
+  color: @fg;
+}
+#cpu,
+#memory,
+#pulseaudio,
+#custom-launcher,
+#workspaces button,
+#custom-updates,
+#battery,
+#clock,
+#custom-power,
+#tray {
+  background: @bg;
+  color: @fg;
+  border-top: 2px solid @color6;
+  border-left: 2px solid @color6;
+  border-right: 2px solid @color0;
+  border-bottom: 2px solid @color0;
+  margin: 4px 2px;
+  padding: 0 10px;
+}
+#cpu,
+#memory {
+  color: @blue;
+  background: @color0;
+  border-top: 2px solid @color0;
+  border-left: 2px solid @color0;
+  border-right: 2px solid @color6;
+  border-bottom: 2px solid @color6;
+}
+#workspaces button.active {
+  color: @fg;
+  background: @bg1;
+  border-top: 2px solid @color0;
+  border-left: 2px solid @color0;
+  border-right: 2px solid @color6;
+  border-bottom: 2px solid @color6;
+}
+/* So that dynamic icons don't squash together */
+#workspaces button label {
+  font-size: 16px;
+  padding: 0 4px;
+}
+#workspaces button label {
+  font-size: 17px;
+  letter-spacing: 10px; /* keep it subtle */
+  padding: 0 6px;
+}
+#custom-launcher {
+  color: @color4;
+}

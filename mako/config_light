@@ -1,0 +1,48 @@
+font=Inter 10
+background-color=#fdf6e3
+text-color=#5c6a72
+border-color=#8da101
+default-timeout=5000
+ignore-timeout=true
+group-by=app-name
+progress-color=over #8da101
+border-size=1
+border-radius=8
+padding=10
+outer-margin=4
+icons=0
+max-icon-size=64
+icon-path=/usr/share/icons/papirus
+
+[urgency=low]
+background-color=#f3efda
+text-color=#5c6a72
+default-timeout=3000
+
+[urgency=normal]
+background-color=#fdf6e3
+text-color=#5c6a72
+
+[urgency=critical]
+background-color=#f85552
+text-color=#fdf6e3
+default-timeout=0
+
+[mode=do-not-disturb]
+invisible=true
+
+[category=brightness]
+text-color=#fdf6e3
+progress-color=over #8da101
+
+[category=volume]
+text-color=#fdf6e3
+progress-color=over #8da101
+default-timeout=1700
+
+[category=media]
+icons=1
+max-icon-size=64
+background-color=#fdf6e3
+text-color=#8da101
+default-timeout=2000

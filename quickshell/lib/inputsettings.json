@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "mouseSpeed": -0.75,
+  "mouseAcceleration": false,
+  "mouseNaturalScroll": false,
+  "mouseLeftHanded": false,
+  "touchpadSpeed": 0,
+  "touchpadNaturalScroll": true,
+  "touchpadTapToClick": true,
+  "touchpadDisableWhileTyping": true
+}

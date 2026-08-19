@@ -1,0 +1,19 @@
+{
+  "knownPatterns": [],
+  "remembered": {},
+  "configured": {
+    "LG Electronics LG ULTRAWIDE 0x0003AD0B": {
+      "output": "DP-1",
+      "mode": "2560x1080@59.978",
+      "position": "-2562x-414",
+      "scale": 1
+    },
+    "Sharp Corporation LQ135P1JX51 0x001023A0": {
+      "output": "eDP-1",
+      "mode": "2880x1920@60",
+      "position": "0x0",
+      "scale": 2
+    }
+  },
+  "primary": "LG Electronics LG ULTRAWIDE 0x0003AD0B"
+}
