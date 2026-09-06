@@ -167,7 +167,7 @@ install_arch() {
             python python-pywal khal vdirsyncer polkit polkit-gnome
             xdg-desktop-portal-hyprland kvantum qt6ct thunar xfconf
             zathura zathura-pdf-poppler waybar papirus-icon-theme
-            ttf-jetbrains-mono-nerd
+            ttf-jetbrains-mono-nerd cava
         )
     fi
 
@@ -275,7 +275,7 @@ install_ubuntu() {
         'pywal|python3-pywal' khal vdirsyncer policykit-1 policykit-1-gnome \
         xdg-desktop-portal-hyprland kvantum qt6ct thunar xfconf zathura \
         zathura-pdf-poppler waybar papirus-icon-theme fonts-jetbrains-mono \
-        auto-cpufreq
+        auto-cpufreq cava
 
     install_grimblast_from_source
     install_snappy_switcher_from_source

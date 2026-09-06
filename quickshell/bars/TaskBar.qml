@@ -24,6 +24,7 @@ PanelWindow {
     // -----------------------------------------------
         signal launcherClicked()
         signal requestHubToggle()
+        signal requestHubBattery()
     
     // -----------------------------------------------
     // STATE MANAGEMENT
@@ -32,15 +33,17 @@ PanelWindow {
 
         property bool isDockMode: false
         property bool hasWindows: false
-        property int activeWsId: Hyprland.focusedMonitor?.activeWorkspace?.id ?? 1
-        property int highestWs: {
-            var h = activeWsId
-            var m = hyCache.wsMap
-            for (var i = 1; i <= 10; i++)
-                if (m[i] && m[i].length) h = Math.max(h, i)
-            return h
+        readonly property var screenMonitor: {
+            var monitors = Hyprland.monitors?.values ?? []
+            return monitors.find(m => screen && m.name === screen.name) ?? null
         }
-        property int shownWsCount: Math.min(10, Math.max(5, highestWs + 1))
+        readonly property int activeWsId: screenMonitor?.activeWorkspace?.id ?? 0
+        readonly property var workspaces: {
+            var all = Hyprland.workspaces?.values ?? []
+            return all.filter(w => w && w.id > 0 && w.monitor && screen
+                && w.monitor.name === screen.name).sort((a, b) => a.id - b.id)
+        }
+        function workspaceIndex(id) { return workspaces.findIndex(w => w.id === id) }
         property bool isDarkMode: theme.isDarkMode
 
         // Shared clock state
@@ -191,27 +194,6 @@ PanelWindow {
     // -----------------------------------------------
     // POLLERS
     // ----------------------------------------------- 
-    
-    // Updates
-    Lib.CommandPoll {
-        id: updates
-        interval: updateProc.running ? 999999999 : 1800000
-        command: Lib.Shell.sh(`
-            if [ -e /var/lib/pacman/db.lck ]; then
-                cat /tmp/qs_updates_count 2>/dev/null || echo 0
-                exit 0
-            fi
-            n=$(checkupdates 2>/dev/null | wc -l)
-            echo "$n" | tee /tmp/qs_updates_count
-        `)
-        parse: function(o) { return String(o ?? "").trim() }
-    }
-
-    Timer {
-        interval: 15000
-        running: true; repeat: false
-        onTriggered: { if (!updateProc.running) updates.update() }
-    }
     
     // Battery
     Lib.CommandPoll {
@@ -464,7 +446,7 @@ PanelWindow {
                     width: dockBatteryContent.width + 14
                     height: parent.height
                     hoverEnabled: true
-                    onClicked: taskbar.requestHubToggle()
+                    onClicked: taskbar.requestHubBattery()
                     
                     Rectangle {
                         anchors.fill: parent
@@ -626,14 +608,14 @@ PanelWindow {
                         clip: true
                         
                         property int hoveredId: 0
-                        property var hoveredItem: (hoveredId > 0) ? wsRepeater.itemAt(hoveredId - 1) : null
+                        property var hoveredItem: wsRepeater.itemAt(taskbar.workspaceIndex(hoveredId))
                         property int pressedId: 0
-                        property var pressedItem: (pressedId > 0) ? wsRepeater.itemAt(pressedId - 1) : null
+                        property var pressedItem: wsRepeater.itemAt(taskbar.workspaceIndex(pressedId))
 
                         Rectangle {
                             id: activePill
                             property int currentId: taskbar.activeWsId
-                            property var targetItem: wsRepeater.itemAt(currentId - 1)
+                            property var targetItem: wsRepeater.itemAt(taskbar.workspaceIndex(currentId))
                             // pillReady suppresses animation on the initial position set at load
                             property bool pillReady: false
                             Component.onCompleted: Qt.callLater(function() { pillReady = true })
@@ -699,18 +681,18 @@ PanelWindow {
                             
                             Repeater {
                                 id: wsRepeater
-                                model: 10
+                                model: taskbar.workspaces
                                 
                                 Item {
                                     id: wsDelegate
-                                    property int wsId: index + 1
+                                    required property var modelData
+                                    property int wsId: modelData.id
                                     property bool isActive: taskbar.activeWsId === wsId
                                     property var wsWindows: hyCache.wsMap[wsId] ?? []
                                     property int winCount: wsWindows.length
                                     property bool hasWindows: winCount > 0
                                     property bool isUrgent: wsWindows.some(tl => tl.urgent)
 
-                                    visible: wsId <= taskbar.shownWsCount
                                     width: visible ? (hasWindows ? (winCount * 22 + 12) : 26) : 0
                                     height: visible ? 34 : 0
 
@@ -835,6 +817,13 @@ PanelWindow {
                 RowLayout {
                     spacing: 10
                     
+                    Lib.CavaVisualizer {
+                        compact: true
+                        bg: pal.bg
+                        accent: pal.accent
+                        border: pal.border
+                    }
+
                     // App/Media Name 
                     Item {
                         Layout.preferredWidth: 300 // Constrain width so it doesn't push others off
@@ -887,76 +876,22 @@ PanelWindow {
                         }
                     }
 
-                    // Updates
-                    TaskbarItem {
-                        visible: updateProc.running || (updates.value !== "0" && updates.value !== "")
-                        iconSource: "../lib/pacman.svg"
-                        text: updateProc.running ? "…" : updates.value
-                        bgColor: pal.bg
-                        textColor: pal.accent
-                        iconColor: pal.accent
-
-                        Process {
-                            id: updateProc
-                            running: false
-                            command: ["kitty", "-e", "bash", "-lc", "sudo pacman -Syu"]
-                            onRunningChanged: { if (!running) updates.update() }
-                        }
-
-                        onClicked: updateProc.running = true
+                    Lib.SysInfoDropdown {
+                        compact: true
+                        opensUp: true
+                        barWindow: taskbar
+                        bg: pal.bg
+                        textPrimary: pal.textPrimary
+                        textSecondary: pal.textSecondary
+                        accent: pal.accent
+                        hover: pal.hoverSpotlight
+                        border: pal.border
+                        warning: taskbar.isDarkMode ? "#e69875" : "#a55524"
+                        critical: taskbar.isDarkMode ? "#ff0004" : "#ff001e"
+                        textFont: theme.textFont
+                        iconFont: theme.iconFont
                     }
-                    
-                    // System Tray
-                    Rectangle {
-                        visible: SystemTray.items.length > 0
-                        height: 24
-                        width: (SystemTray.items.length * 22) + 10
-                        radius: 9
-                        color: pal.bg
-                        border.width: 1
-                        border.color: pal.border
-                        
-                        Row {
-                            anchors.centerIn: parent
-                            spacing: 6
-                            
-                            Repeater {
-                                model: SystemTray.items
-                                
-                                Item {
-                                    width: 16
-                                    height: 16
-                                    scale: trayPress.pressed ? 0.94 : (trayPress.containsMouse ? 1.06 : 1.0)
-                                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.08 } }
 
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: width / 2
-                                        color: pal.hoverSpotlight
-                                        opacity: trayPress.pressed ? 1.0 : (trayPress.containsMouse ? 0.8 : 0.0)
-                                        Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                                    }
-
-                                    Image {
-                                        anchors.centerIn: parent
-                                        width: 14
-                                        height: 14
-                                        source: modelData.icon
-                                    }
-                                    
-                                    MouseArea {
-                                        id: trayPress
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                        onClicked: (mouse) => modelData.activate(mouse.button)
-                                        onPressed: (mouse) => { if (mouse.button === Qt.RightButton) modelData.menu.open(this) }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
                     // Battery
                     TaskbarItem {
                     Layout.preferredWidth: 60
@@ -966,6 +901,8 @@ PanelWindow {
                     bgColor: pal.bg
                     iconColor: batteryState.battColor
                     textColor: batteryState.battColor
+
+                    onClicked: taskbar.requestHubBattery()
 
                     SequentialAnimation {
                         running: batteryState.cap <= 10 && !batteryState.isCharging
@@ -1046,6 +983,23 @@ PanelWindow {
                         HoverHandler {
                             id: clockHover
                         }
+                    }
+
+                    // System Tray
+                    Lib.TrayDropdown {
+                        compact: true
+                        opensUp: true
+                        barWindow: taskbar
+                        bg: pal.bg
+                        textPrimary: pal.textPrimary
+                        textSecondary: pal.textSecondary
+                        accent: pal.accent
+                        hover: pal.hoverSpotlight
+                        border: pal.border
+                        warning: taskbar.isDarkMode ? "#e69875" : "#a55524"
+                        critical: taskbar.isDarkMode ? "#ff0004" : "#ff001e"
+                        textFont: theme.textFont
+                        iconFont: theme.iconFont
                     }
                 }
             }

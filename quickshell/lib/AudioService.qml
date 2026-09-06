@@ -13,6 +13,7 @@ Scope {
     property var pendingRoute: null
     property var pendingDefault: null
     property int pendingAttempts: 0
+    property int selectGen: 0
     property int volumeNodeId: -1
     property string status: ""
     property bool statusError: false
@@ -20,6 +21,7 @@ Scope {
     readonly property int defaultInputId: Pipewire.defaultAudioSource ? Pipewire.defaultAudioSource.id : -1
 
     function refresh() {
+        if (root.pendingRoute && !root.pendingRoute.routed) return
         dump.running = false
         dump.running = true
     }
@@ -215,33 +217,36 @@ Scope {
     }
 
     function select(device, input) {
-        if (root.pendingRoute || root.pendingDefault) return
         if (!device) {
             root.status = "Choose an audio device."
             root.statusError = true
             return
         }
+        root.selectGen += 1
+        var gen = root.selectGen
+        root.pendingRoute = null
+        root.pendingDefault = null
         var label = root.deviceLabel(device)
         root.statusError = false
         root.volumeNodeId = -1
         root.status = "Switching to " + label + "…"
         if (device.kind === "node") {
-            root.setDefault(device.nodeId, label, input)
+            root.setDefault(device.nodeId, label, input, gen)
             return
         }
-        root.pendingRoute = { device: device, input: input, label: label }
+        root.pendingRoute = { device: device, input: input, label: label, gen: gen, routed: false }
         profileAction.errorText = ""
         profileAction.command = ["pw-cli", "set-param", String(device.cardId), "Profile", JSON.stringify({ index: device.profileIndex })]
         profileAction.running = true
     }
 
     function finishPendingRoute() {
-        if (!root.pendingRoute || root.pendingDefault) return
+        if (!root.pendingRoute || !root.pendingRoute.routed || root.pendingDefault) return
         var pending = root.pendingRoute
         var node = root.findNode(pending.device.cardId, pending.device.deviceIndex, pending.input ? "Audio/Source" : "Audio/Sink")
         if (node) {
             root.pendingRoute = null
-            root.setDefault(node.id, pending.label, pending.input)
+            root.setDefault(node.id, pending.label, pending.input, pending.gen)
             return
         }
         root.pendingAttempts++
@@ -254,13 +259,13 @@ Scope {
         root.pendingRoute = null
     }
 
-    function setDefault(nodeId, description, input) {
+    function setDefault(nodeId, description, input, gen) {
         if (nodeId < 0) {
             root.status = "PipeWire output is not ready."
             root.statusError = true
             return
         }
-        root.pendingDefault = { description: String(description || "audio device"), input: input }
+        root.pendingDefault = { description: String(description || "audio device"), input: input, gen: gen || root.selectGen }
         defaultAction.errorText = ""
         defaultAction.command = ["wpctl", "set-default", String(nodeId)]
         defaultAction.running = true
@@ -290,13 +295,14 @@ Scope {
         property string errorText: ""
         stderr: StdioCollector { onStreamFinished: profileAction.errorText = this.text.trim() }
         onExited: function(exitCode) {
+            var pending = root.pendingRoute
+            if (!pending || pending.gen !== root.selectGen) return
             if (exitCode !== 0) {
                 root.status = profileAction.errorText || "PipeWire rejected the audio profile."
                 root.statusError = true
                 root.pendingRoute = null
                 return
             }
-            var pending = root.pendingRoute
             routeAction.errorText = ""
             routeAction.command = ["pw-cli", "set-param", String(pending.device.cardId), "Route",
                 JSON.stringify({ index: pending.device.routeIndex, device: pending.device.deviceIndex })]
@@ -309,12 +315,16 @@ Scope {
         property string errorText: ""
         stderr: StdioCollector { onStreamFinished: routeAction.errorText = this.text.trim() }
         onExited: function(exitCode) {
+            var pending = root.pendingRoute
+            if (!pending || pending.gen !== root.selectGen) return
             if (exitCode !== 0) {
                 root.status = routeAction.errorText || "PipeWire rejected the audio route."
                 root.statusError = true
                 root.pendingRoute = null
                 return
             }
+            pending.routed = true
+            root.pendingRoute = pending
             root.pendingAttempts = 0
             refreshTimer.restart()
         }
@@ -326,6 +336,7 @@ Scope {
         stderr: StdioCollector { onStreamFinished: defaultAction.errorText = this.text.trim() }
         onExited: function(exitCode) {
             var pending = root.pendingDefault
+            if (!pending || pending.gen !== root.selectGen) return
             root.pendingDefault = null
             if (exitCode !== 0) {
                 root.status = defaultAction.errorText || "WirePlumber rejected the default device."
@@ -355,7 +366,7 @@ Scope {
     Timer {
         interval: 1500
         repeat: true
-        running: true
+        running: !root.pendingRoute && !root.pendingDefault
         onTriggered: root.refresh()
     }
 

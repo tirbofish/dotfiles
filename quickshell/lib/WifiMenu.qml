@@ -12,8 +12,8 @@ PanelWindow {
     color: "transparent"
 
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
-    WlrLayershell.exclusiveZone: -1
+    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    WlrLayershell.exclusiveZone: visible ? -1 : 0
     WlrLayershell.namespace: "wifi-menu"
 
     // Hide hyprland borders
@@ -40,11 +40,11 @@ PanelWindow {
         setBordersHidden(false)
     }
         
-    focusable: true
-
     // Runs either as its own process or as an overlay inside the shell; the
     // embedded case must not tear the whole shell down when it closes
     property bool standalone: true
+    focusable: visible
+    visible: standalone
     signal closeRequested()
     function dismiss() {
         if (root.standalone) Qt.quit()
@@ -741,7 +741,8 @@ PanelWindow {
     Rectangle {
         id: menuCard
         width: 390
-        height: Math.ceil(mainLayout.implicitHeight + 24)
+        implicitHeight: Math.max(220, Math.ceil(mainLayout.implicitHeight + 24))
+        height: implicitHeight
 
         anchors.right: parent.right
         anchors.top: Configuration.barStyle === "top" ? parent.top : undefined

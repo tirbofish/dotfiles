@@ -10,8 +10,8 @@ Item {
     property date when: new Date()
     property var cells: []
 
-    implicitWidth: grid.implicitWidth
-    implicitHeight: grid.implicitHeight
+    implicitWidth: 196
+    implicitHeight: 120
 
     readonly property color _fgOnAccent: (themed && theme.textOnAccent !== undefined) ? theme.textOnAccent : Theme.fgOnAccent
     readonly property color _accent: (themed && theme.accent !== undefined) ? theme.accent : Theme.accent
@@ -50,6 +50,7 @@ Item {
 
     GridLayout {
         id: grid
+        anchors.fill: parent
         columns: 7
         rowSpacing: 3
         columnSpacing: 3
@@ -57,8 +58,8 @@ Item {
         Repeater {
             model: root.cells.length
             delegate: Item {
-                Layout.preferredWidth: 28
-                Layout.preferredHeight: 14
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 property var cell: root.cells[index]
 
                 Text {

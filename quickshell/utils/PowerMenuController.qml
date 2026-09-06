@@ -159,7 +159,7 @@ FocusScope {
 
     function run(cmd) {
         close(function() {
-            if (cmd === "lock") Quickshell.execDetached(["hyprlock"])
+            if (cmd === "lock") Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr/scripts/lock.sh"])
             if (cmd === "suspend") Quickshell.execDetached(["systemctl", "suspend"])
             if (cmd === "logout") Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.exit()"])
             if (cmd === "reboot") Quickshell.execDetached(["systemctl", "reboot"])

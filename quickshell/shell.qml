@@ -1,3 +1,5 @@
+//@ pragma UseQApplication
+
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
@@ -13,6 +15,20 @@ ShellRoot {
     // Keep persisted pointer settings applied even before the settings page opens.
     readonly property var inputService: Lib.InputService
 
+    SystemHub.SettingsWindow {}
+
+    // Hyprland forwards taskbar-style minimize requests but leaves policy to the shell.
+    Connections {
+        target: Hyprland
+        function onRawEvent(ev) {
+            if (!ev || ev.name !== "minimized") return
+            const fields = ev.parse(2)
+            if (fields.length === 2)
+                Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr/scripts/minimized-windows.sh",
+                    fields[1] === "1" ? "hide" : "show", fields[0]])
+        }
+    }
+
     Timer {
         id: inputAfterMonitorUpdate
         interval: 1000
@@ -24,6 +40,12 @@ ShellRoot {
         function onMonitorApplied() {
             inputAfterMonitorUpdate.restart()
         }
+    }
+
+    GlobalShortcut {
+        name: "widgetEdit"
+        description: "Edit desktop widgets"
+        onPressed: Lib.WidgetService.toggleEditing()
     }
 
     Variants {
@@ -45,6 +67,38 @@ ShellRoot {
                 theme: screenTheme
             }
 
+            LazyLoader {
+                active: v.modelData === Quickshell.screens[0]
+                Desktop.DesktopFiles {
+                    screen: v.modelData
+                    theme: screenTheme
+                }
+            }
+
+            Variants {
+                model: {
+                    var _ = Lib.WidgetService.stamp
+                    return Lib.WidgetService.widgetsOn(Lib.WidgetService.outputKeyForScreen(v.modelData))
+                }
+                Desktop.WidgetShell {
+                    property var modelData
+                    screen: v.modelData
+                    theme: screenTheme
+                    spec: modelData
+                    outputKey: Lib.WidgetService.outputKeyForScreen(v.modelData)
+                }
+            }
+
+            Desktop.EditBar {
+                screen: v.modelData
+                theme: screenTheme
+                outputKey: {
+                    var _ = Lib.WidgetService.stamp
+                    return Lib.WidgetService.outputKeyForScreen(v.modelData)
+                }
+                outputName: v.modelData ? v.modelData.name : ""
+            }
+
             // Held until the settings load
             Loader {
                 id: barLoader
@@ -59,6 +113,7 @@ ShellRoot {
                     onHasWindowsChanged: border.setTopSidesVisible(!hasWindows)
                     onLauncherClicked: isDockMode ? appDrawer.toggle() : wideDrawer.toggle()
                     onRequestHubToggle: v.toggleHub()
+                    onRequestHubBattery: v.openHubBattery()
                 }
             }
 
@@ -68,6 +123,7 @@ ShellRoot {
                 Bars.TopBar {
                     screen: v.modelData
                     onRequestHubToggle: v.toggleHub()
+                    onRequestHubBattery: v.openHubBattery()
                 }
             }
 
@@ -77,13 +133,15 @@ ShellRoot {
                 visible: false
             }
 
-            Loader {
-                active: true
-                sourceComponent: Lib.WifiMenu {
+            // PanelWindow is not an Item; LazyLoader creates/destroys the layer
+            // so it maps already-visible instead of toggling a blank surface.
+            LazyLoader {
+                active: Lib.Overlays.wifiOpen &&
+                    Lib.Overlays.wifiScreen === v.modelData.name
+                Lib.WifiMenu {
                     screen: v.modelData
                     standalone: false
-                    visible: Lib.Overlays.wifiOpen &&
-                        Lib.Overlays.wifiScreen === v.modelData.name
+                    visible: true
                     onCloseRequested: Lib.Overlays.wifiOpen = false
                 }
             }
@@ -149,6 +207,12 @@ ShellRoot {
                     // Item; PanelWindow itself has no forceActiveFocus().
                     hubWindow.visible = true
                 }
+            }
+
+            function openHubBattery() {
+                hubWindow.showBattery()
+                if (!hubWindow.visible)
+                    hubWindow.visible = true
             }
 
             GlobalShortcut {

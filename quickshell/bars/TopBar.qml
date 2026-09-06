@@ -14,6 +14,7 @@ import "../lib" as Lib
 PanelWindow {
     id: win
     signal requestHubToggle()
+    signal requestHubBattery()
 
     anchors { top: true; left: true; right: true }
     height: 40
@@ -28,25 +29,27 @@ PanelWindow {
     function sh(cmd) { return ["bash", "-c", cmd] }
     function det(cmd) { Quickshell.execDetached(sh(cmd)) }
 
-    // External outputs can receive any workspace range, so anchor their bar to
-    // the range containing the output's active workspace.
-    readonly property int workspacesPerScreen: 8
-    readonly property int minimumVisibleWorkspaces: 4
     readonly property var screenMonitor: {
         var monitors = Hyprland.monitors?.values ?? []
         for (var i = 0; i < monitors.length; i++)
             if (screen && monitors[i].name === screen.name) return monitors[i]
         return null
     }
-    readonly property int workspaceFirst: {
-        if (screen && screen.name === Lib.MonitorService.laptopOutput) return 1
-        var active = Number(screenMonitor?.activeWorkspace?.id ?? 0)
-        if (active <= win.workspacesPerScreen) return win.workspacesPerScreen + 1
-        return Math.floor((active - 1) / win.workspacesPerScreen) * win.workspacesPerScreen + 1
+    readonly property var workspaces: {
+        var all = Hyprland.workspaces?.values ?? []
+        return all.filter(function(workspace) {
+            return workspace && workspace.id > 0 && workspace.monitor
+                && screen && workspace.monitor.name === screen.name
+        }).sort(function(a, b) { return a.id - b.id })
+    }
+    function workspaceIndex(id) {
+        for (var i = 0; i < workspaces.length; i++)
+            if (workspaces[i].id === id) return i
+        return -1
     }
     readonly property int activeWsId: {
         var active = Number(screenMonitor?.activeWorkspace?.id ?? 0)
-        return active > 0 ? active : workspaceFirst
+        return active > 0 ? active : (workspaces.length ? workspaces[0].id : 0)
     }
 
     Lib.ThemeEngine {
@@ -73,18 +76,22 @@ PanelWindow {
     QtObject {
         id: hyCache
         property var wsMap: ({}) // wsId
+        property int minimizedCount: 0
         property bool pending: false
 
         function rebuild() {
             const m = {}
+            var minimized = 0
             const list = Hyprland.toplevels?.values ?? []
             for (const tl of list) {
+                if (tl?.workspace?.name === "special:minimized") minimized++
                 const id = tl?.workspace?.id
                 if (!id) continue
                 if (!m[id]) m[id] = []
                 m[id].push(tl)
             }
             wsMap = m
+            minimizedCount = minimized
         }
 
         // Collapses burst events into 1 rebuild per frame
@@ -132,34 +139,6 @@ PanelWindow {
     }
 
     // POLLERS
-    // 6.1 UPDATE POLLER
-    Lib.CommandPoll {
-        id: updates
-        // Stop polling while the update terminal is open
-        interval: updateProc.running ? 999999999 : 1800000
-
-        command: win.sh(`
-            # Don't run checkupdates while pacman is locked
-            if [ -e /var/lib/pacman/db.lck ]; then
-                cat /tmp/qs_updates_count 2>/dev/null || echo 0
-                exit 0
-            fi
-
-            n=$(checkupdates 2>/dev/null | wc -l)
-            echo "$n" | tee /tmp/qs_updates_count
-        `)
-
-        parse: function(o) { return String(o ?? "").trim() }
-    }
-
-    // Boot Retry for Updates
-    Timer {
-        interval: 15000 // 15s wait for internet
-        running: true; repeat: false
-        onTriggered: {
-            if (!updateProc.running) updates.update()
-        }
-    }
     // 6.2 BATTERY %, STATUS POLLER
     Lib.CommandPoll {
         id: powerPoll
@@ -321,10 +300,11 @@ PanelWindow {
                 radius: 17
                 color: pal.bg
                 clip: true
+                Behavior on Layout.preferredWidth { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                 property int hoveredId: 0
-                property var hoveredItem: (hoveredId >= win.workspaceFirst) ? wsRepeater.itemAt(hoveredId - win.workspaceFirst) : null
+                property var hoveredItem: wsRepeater.itemAt(win.workspaceIndex(hoveredId))
                 property int pressedId: 0
-                property var pressedItem: (pressedId >= win.workspaceFirst) ? wsRepeater.itemAt(pressedId - win.workspaceFirst) : null
+                property var pressedItem: wsRepeater.itemAt(win.workspaceIndex(pressedId))
                 // Re-evaluate the active pill once Repeater has created its delegates.
                 property int delegateRevision: 0
 
@@ -334,7 +314,7 @@ PanelWindow {
                     property int currentId: win.activeWsId
                     property var targetItem: {
                         wsContainer.delegateRevision
-                        return wsRepeater.itemAt(currentId - win.workspaceFirst)
+                        return wsRepeater.itemAt(win.workspaceIndex(currentId))
                     }
                     x: targetItem ? (wsRow.x + targetItem.x) : 0
                     width: targetItem ? targetItem.width : 0
@@ -396,11 +376,12 @@ PanelWindow {
                     spacing: 2
                     Repeater {
                         id: wsRepeater
-                        model: win.workspacesPerScreen
+                        model: win.workspaces
                         onItemAdded: wsContainer.delegateRevision++
                         Item {
                             id: wsDelegate
-                            property int wsId: index + win.workspaceFirst
+                            required property var modelData
+                            property int wsId: modelData.id
                             property bool isActive: win.activeWsId === wsId
 
                             // --- READ FROM CACHE ---
@@ -409,7 +390,6 @@ PanelWindow {
                             property bool hasWindows: winCount > 0
                             property bool isUrgent: wsWindows.some(tl => tl.urgent)
 
-                            visible: index < win.minimumVisibleWorkspaces || hasWindows || isActive
                             width: hasWindows ? (winCount * 22 + 12) : 26
                             height: 34
 
@@ -518,42 +498,136 @@ PanelWindow {
             }
 //------------------------------------------------- CENTER -----------------------------------------------------
 
-            // 9. MEDIA & TITLE 
+            // 9. MEDIA & TITLE
             Item {
+                id: mediaCenter
                 Layout.fillWidth: true
-                Layout.preferredHeight: 36
+                Layout.fillHeight: true
+                clip: false
                 property var player: Mpris.players.values[0] ?? null
                 property bool isPlaying: player && player.playbackState === MprisPlaybackState.Playing
                 property string trackTitle: player ? player.trackTitle : ""
                 property string trackArtist: player ? player.trackArtist : ""
+                property string nowPlaying: {
+                    var t = trackTitle || ""
+                    var a = trackArtist || ""
+                    if (t && a) return t + " <font color='" + pal.textSecondary + "'>- " + a + "</font>"
+                    return t || a || "Playing"
+                }
+
+                Item {
+                    id: cavaHost
+                    visible: mediaCenter.isPlaying
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    y: -4
+                    height: win.height
+                    z: 0
+
+                    Lib.CavaVisualizer {
+                        id: hangingCava
+                        anchors.fill: parent
+                        backdrop: true
+                        requestedBarCount: Math.max(12, Math.min(64, Math.round(cavaHost.width / 24)))
+                        accent: pal.accent
+                        layer.enabled: true
+                        layer.smooth: true
+                        layer.effect: OpacityMask { maskSource: cavaEdgeMask }
+                    }
+
+                    Rectangle {
+                        id: cavaEdgeMask
+                        anchors.fill: parent
+                        visible: false
+                        gradient: Gradient {
+                            orientation: Gradient.Horizontal
+                            GradientStop { position: 0.00; color: "#00ffffff" }
+                            GradientStop { position: 0.08; color: "#ffffffff" }
+                            GradientStop { position: 0.92; color: "#ffffffff" }
+                            GradientStop { position: 1.00; color: "#00ffffff" }
+                        }
+                    }
+                }
 
                 Text {
                     anchors.centerIn: parent
-                    visible: !parent.isPlaying
+                    visible: !mediaCenter.isPlaying
+                    z: 1
                     text: Hyprland.activeToplevel?.title ?? "Desktop"
-                    font.family: theme.iconFont; font.weight: 700; font.pixelSize: 13
+                    font.family: theme.iconFont
+                    font.weight: 700
+                    font.pixelSize: 13
                     color: pal.textPrimary
-                    width: Math.min(implicitWidth, 500)
+                    width: Math.min(implicitWidth, Math.max(80, parent.width - 16))
                     elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignHCenter
                 }
 
-                RowLayout {
+                Row {
+                    visible: mediaCenter.isPlaying
                     anchors.centerIn: parent
-                    visible: parent.isPlaying
-                    spacing: 10
-                    Text { text: ""; font.family: theme.iconFont; font.pixelSize: 14; color: pal.accent }
+                    spacing: 8
+                    z: 1
+                    layer.enabled: true
+                    layer.effect: DropShadow {
+                        transparentBorder: true
+                        horizontalOffset: 0
+                        verticalOffset: 1
+                        radius: 10
+                        samples: 20
+                        color: win.isDarkMode ? Qt.rgba(0, 0, 0, 0.55) : Qt.rgba(1, 1, 1, 0.45)
+                    }
+
                     Text {
-                        text: parent.parent.trackTitle + " <font color='" + pal.textSecondary + "'>- " + parent.parent.trackArtist + "</font>"
+                        text: ""
+                        font.family: theme.iconFont
+                        font.pixelSize: 14
+                        color: pal.accent
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text {
+                        text: mediaCenter.nowPlaying
                         textFormat: Text.StyledText
-                        font.family: theme.iconFont; font.weight: 700; font.pixelSize: 13
+                        font.family: theme.iconFont
+                        font.weight: 700
+                        font.pixelSize: 13
                         color: pal.textPrimary
-                        Layout.maximumWidth: 350
                         elide: Text.ElideRight
+                        width: Math.min(implicitWidth, Math.max(80, mediaCenter.width - 44))
+                        verticalAlignment: Text.AlignVCenter
+                        anchors.verticalCenter: parent.verticalCenter
                     }
                 }
             }
 
 //----------------------------------------------------------------------------------------RIGHT----------
+
+            Item {
+                id: minimizedButton
+                readonly property bool shown: hyCache.minimizedCount > 0
+                Layout.preferredWidth: shown ? 52 : 0
+                Layout.preferredHeight: 34
+                opacity: shown ? 1 : 0
+                scale: shown ? 1 : 0.55
+                visible: opacity > 0
+
+                Behavior on Layout.preferredWidth { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.25 } }
+
+                TopBarItem {
+                    anchors.fill: parent
+                    icon: "󰖰"
+                    text: String(hyCache.minimizedCount)
+                    bgColor: pal.bg
+                    iconColor: pal.accent
+                    textColor: pal.accent
+                    borderWidth: 0
+                    borderColor: "transparent"
+                    hoverColor: pal.hoverSpotlight
+                    onClicked: win.det("~/.config/hypr/scripts/minimized-windows.sh menu")
+                }
+            }
 
             TopBarItem {
                 id: wifiItem
@@ -575,7 +649,11 @@ PanelWindow {
                 }
 
                 onClicked: {
-                    Lib.Overlays.openWifi(win.screen ? win.screen.name : "")
+                    var name = win.screen ? win.screen.name : ""
+                    if (Lib.Overlays.wifiOpen && Lib.Overlays.wifiScreen === name)
+                        Lib.Overlays.wifiOpen = false
+                    else
+                        Lib.Overlays.openWifi(name)
                 }
             }
 
@@ -619,74 +697,6 @@ PanelWindow {
                 }
 
                 onClicked: win.det("blueman-manager")
-            }
-
-            // 10. UPDATES
-            TopBarItem {
-                // Keep visible while update process is running
-                visible: updateProc.running || (updates.value !== "0" && updates.value !== "")
-                iconSource: "../lib/pacman.svg"
-                text: updateProc.running ? "…" : updates.value
-                bgColor: pal.bg; textColor: pal.accent; iconColor: pal.accent
-                borderWidth: 0; borderColor: "transparent"; hoverColor: pal.hoverSpotlight
-
-                Process {
-                    id: updateProc
-                    running: false
-                    // The process stays 'running' as long as the window is open.
-                    command: ["kitty", "-e", "bash", "-lc", "sudo pacman -Syu"]
-
-                    // When running changes to false (window closed),
-                    onRunningChanged: {
-                        if (!running) {
-                            updates.update()
-                        }
-                    }
-                }
-
-                onClicked: {
-                    updateProc.running = true
-                }
-            }
-
-            // 11. TRAY
-            Rectangle {
-                visible: SystemTray.items.length > 0
-                height: 30
-                width: (SystemTray.items.length * 28) + 12
-                radius: 15
-                color: pal.bg
-                border.width: 1
-                border.color: pal.border
-                Row {
-                    anchors.centerIn: parent; spacing: 8
-                    Repeater {
-                        model: SystemTray.items
-                        Item {
-                            width: 20; height: 20
-                            scale: trayPress.pressed ? 0.94 : (trayPress.containsMouse ? 1.06 : 1.0)
-                            Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.08 } }
-
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: width / 2
-                                color: pal.hoverSpotlight
-                                opacity: trayPress.pressed ? 1.0 : (trayPress.containsMouse ? 0.8 : 0.0)
-                                Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                            }
-
-                            Image { anchors.centerIn: parent; width: 16; height: 16; source: modelData.icon }
-                            MouseArea {
-                                id: trayPress
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                onClicked: (mouse) => modelData.activate(mouse.button)
-                                onPressed: (mouse) => { if (mouse.button === Qt.RightButton) modelData.menu.open(this) }
-                            }
-                        }
-                    }
-                }
             }
 
             // 12. BATTERY
@@ -744,6 +754,8 @@ PanelWindow {
                     NumberAnimation { target: powerSurge; property: "scale"; from: 1.0; to: 1.45; duration: 520; easing.type: Easing.OutCubic }
                     NumberAnimation { target: powerSurge; property: "opacity"; from: 1.0; to: 0.0; duration: 520; easing.type: Easing.OutCubic }
                 }
+
+                onClicked: win.requestHubBattery()
             }
 
             // 13. CLOCK/DATE
@@ -819,6 +831,35 @@ PanelWindow {
                     onPressed: (mouse) => { win.requestHubToggle(); mouse.accepted = true }
                     onEntered: clockShimmerAnim.restart()
                 }
+            }
+
+            Lib.SysInfoDropdown {
+                barWindow: win
+                bg: pal.bg
+                textPrimary: pal.textPrimary
+                textSecondary: pal.textSecondary
+                accent: pal.accent
+                hover: pal.hoverSpotlight
+                border: pal.border
+                warning: win.isDarkMode ? "#e69875" : "#a55524"
+                critical: win.isDarkMode ? "#ff0004" : "#ff001e"
+                textFont: theme.textFont
+                iconFont: theme.iconFont
+            }
+
+            // 11. TRAY
+            Lib.TrayDropdown {
+                barWindow: win
+                bg: pal.bg
+                textPrimary: pal.textPrimary
+                textSecondary: pal.textSecondary
+                accent: pal.accent
+                hover: pal.hoverSpotlight
+                border: pal.border
+                warning: win.isDarkMode ? "#e69875" : "#a55524"
+                critical: win.isDarkMode ? "#ff0004" : "#ff001e"
+                textFont: theme.textFont
+                iconFont: theme.iconFont
             }
         }
     }

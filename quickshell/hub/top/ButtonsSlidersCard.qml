@@ -222,6 +222,21 @@ Lib.TopCard {
     det("dunstctl set-paused " + (next ? "true" : "false"))
   }
 
+  property bool caffeinated: false
+  Lib.CommandPoll {
+    id: caffeinePoll
+    running: root.active && root.visible
+    interval: 2500
+    command: ["bash", Lib.Configuration.idleScript, "status"]
+    parse: function(o) { return String(o).trim() === "on" }
+    onUpdated: root.caffeinated = value
+  }
+  function toggleCaffeine() {
+    var next = !root.caffeinated
+    root.caffeinated = next
+    det(Lib.Configuration.idleScript + " " + (next ? "on" : "off"))
+  }
+
   // --- UI ---
   ColumnLayout {
     spacing: 12
@@ -273,6 +288,15 @@ Lib.TopCard {
         label: root.dnd ? "Silent" : "Notify"
         active: root.dnd
         onClicked: toggleDnd()
+      }
+
+      Lib.ExpressiveButton {
+        theme: root.theme
+        cornerRadius: 17
+        icon: "coffee.svg"
+        label: root.caffeinated ? "Awake" : "Idle"
+        active: root.caffeinated
+        onClicked: toggleCaffeine()
       }
     }
 

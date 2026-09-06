@@ -1,0 +1,2 @@
+module plugins
+singleton PluginHost 1.0 PluginHost.qml

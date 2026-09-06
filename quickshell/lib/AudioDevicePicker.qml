@@ -13,8 +13,15 @@ ColumnLayout {
 
     function selected(device, input) {
         if (!device) return false
-        if (device.kind === "route") return Boolean(device.active)
-        return device.nodeId === (input ? AudioService.defaultInputId : AudioService.defaultOutputId)
+        var pending = AudioService.pendingRoute
+        if (pending && pending.input === input && pending.device
+            && Number(pending.device.cardId) === Number(device.cardId)
+            && Number(pending.device.routeIndex) === Number(device.routeIndex))
+            return true
+        if (device.kind === "route") return !!device.active
+        var defaultId = input ? AudioService.defaultInputId : AudioService.defaultOutputId
+        if (defaultId < 0) return false
+        return Number(device.nodeId) === Number(defaultId)
     }
 
     component DeviceRow: Rectangle {

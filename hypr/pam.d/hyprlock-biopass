@@ -1,0 +1,5 @@
+#%PAM-1.0
+# Biopass-only service used by the lock-screen helper. Same module as SDDM.
+
+auth        required    libbiopass_pam.so
+account     required    pam_permit.so

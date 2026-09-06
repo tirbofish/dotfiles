@@ -34,6 +34,7 @@ Scope {
         var bool = function(value) { return value ? "true" : "false" }
         Quickshell.execDetached(["hyprctl", "eval",
             "hl.config({ input = { sensitivity = " + mouseSpeed
+            + ", accel_profile = " + luaString(mouseAcceleration ? "adaptive" : "flat")
             + ", natural_scroll = " + bool(mouseNaturalScroll)
             + ", left_handed = " + bool(mouseLeftHanded)
             + ", touchpad = { natural_scroll = " + bool(touchpadNaturalScroll)

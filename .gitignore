@@ -55,6 +55,9 @@
 **/*.pem
 **/*.p12
 **/*.pfx
+**/*.o
+**/*.pyc
+**/__pycache__/
 **/bookmarks
 **/known_hosts*
 **/profile.jpg
@@ -67,3 +70,22 @@
 /spotatui/history/
 /spotatui/spotatui-recap.html
 /systemd/user/*.wants/
+
+# Scratch copies, compiled helpers, and local tests
+/hypr/backup-*/
+/hypr/scripts/hyprlock-biopass-auth
+/hypr/scripts/test-*.lua
+/quickshell/desktop/test-*.cjs
+/quickshell/desktop/tests/
+
+# Runtime layout and this-machine display serials
+/quickshell/desktop/widgets.json
+/quickshell/lib/monitors.json
+
+# Last-screenshot filename and other per-machine app state
+/swappy/config
+/mimeapps.list
+
+# User units with absolute home paths, venvs, and tokens
+/systemd/user/hermes-gateway.service
+/systemd/user/opencodex-proxy.service

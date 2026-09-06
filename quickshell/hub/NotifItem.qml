@@ -24,9 +24,10 @@ Rectangle {
     signal clicked()
 
     radius: 16
-    color: hovered ? cBgHover : cBg
+    color: hovered ? cBgHover : (hasTheme ? theme.bgCard : cBg)
     antialiasing: true
-    border.width: 0
+    border.width: 1
+    border.color: hasTheme ? theme.border : "transparent"
 
     property bool hovered: false
 

@@ -29,20 +29,23 @@ M.defaults = {
     inactive_border = "rgba(141719aa)",
     animations      = true,
     shadow          = true,
+    shadow_color    = "rgba(14171944)",
     blur            = true,
     dim_inactive    = false,
     dim_around      = 0.6,
     damage_tracking = 2,
 }
 
-local palette_chunk = loadfile(home .. "/.cache/wal/tirbofish-hyprland.lua")
-if palette_chunk then
-    local ok, palette = pcall(palette_chunk)
-    if ok and type(palette) == "table" then
-        M.defaults.active_border = palette.active_border
-        M.defaults.inactive_border = palette.inactive_border
-    end
+local function load_wal_palette()
+    local chunk = loadfile(home .. "/.cache/wal/tirbofish-hyprland.lua")
+    if not chunk then return end
+    local ok, palette = pcall(chunk)
+    if not ok or type(palette) ~= "table" then return end
+    if palette.active_border then M.defaults.active_border = palette.active_border end
+    if palette.inactive_border then M.defaults.inactive_border = palette.inactive_border end
+    if palette.shadow then M.defaults.shadow_color = palette.shadow end
 end
+load_wal_palette()
 
 M.ui_state = {
     theme           = "dark",
@@ -54,6 +57,17 @@ M.ui_state = {
 local function write_file(path, content)
     local f = io.open(path, "w")
     if f then f:write(content) f:close() end
+end
+
+local shader_persist = cache_dir .. "/current_shader"
+
+local function persist_shader(name)
+    if not name or name == "" or name == "Turn Off All" then
+        write_file(shader_persist, "none")
+        return
+    end
+    local file = M.simple_shaders[name] or (M.complex_modes[name] and M.complex_modes[name].shader)
+    write_file(shader_persist, file or "none")
 end
 
 local function read_file(path, fallback)
@@ -77,6 +91,7 @@ local function switch_theme(restore_file, new_theme)
 end
 
 local function restore_defaults()
+    load_wal_palette()
     hl.config({
         general = {
             gaps_in         = M.defaults.gaps_in,
@@ -89,7 +104,7 @@ local function restore_defaults()
             rounding     = M.defaults.rounding,
             dim_inactive = M.defaults.dim_inactive,
             dim_around   = M.defaults.dim_around,
-            shadow       = { enabled = M.defaults.shadow },
+            shadow       = { enabled = M.defaults.shadow, color = M.defaults.shadow_color },
             blur         = { enabled = M.defaults.blur },
         },
         animations = { enabled = M.defaults.animations },
@@ -230,6 +245,7 @@ function M.turn_off_all()
         M.active_mode = nil
     end
     M.current_shader = nil
+    persist_shader(nil)
     hl.config({ decoration = { screen_shader = "" } })
 end
 
@@ -253,12 +269,14 @@ function M.toggle(name)
     if M.complex_modes[name] then
         M.active_mode    = name
         M.current_shader = name
+        persist_shader(name)
         M.complex_modes[name].activate(shader_dir .. M.complex_modes[name].shader)
         return
     end
 
     if M.simple_shaders[name] then
         M.current_shader = name
+        persist_shader(name)
         hl.config({ decoration = { screen_shader = shader_dir .. M.simple_shaders[name] } })
         return
     end
@@ -269,7 +287,6 @@ local mod = "SUPER"
 local alt = "ALT"
 
 hl.bind(mod .. " + D",       function() M.toggle("Reading Mode") end, { description = "Toggle Reading Mode"    })
-hl.bind(mod .. " + N",       function() M.toggle("Night Light")  end, { description = "Toggle Night Light"     })
 hl.bind(alt .. " + C",       function() M.toggle("CRT Mode")     end, { description = "Toggle CRT Mode"        })
 hl.bind(mod .. " + ALT + S", function() M.turn_off_all()         end, { description = "Turn off all shaders"   })
 

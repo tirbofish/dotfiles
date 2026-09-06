@@ -2,9 +2,8 @@
   "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
   "logo": {
     "type": "kitty",
-    "source": "~/.config/fastfetch/fox1.png",
-    "width": 35,
-    "height": 14,
+    "source": "~/.local/state/theme/fastfetch_logo",
+    "height": 10,
     "padding": {
       "top": 1,
       "left": 1,

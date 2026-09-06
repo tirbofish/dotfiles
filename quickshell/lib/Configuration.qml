@@ -66,8 +66,50 @@ Scope {
     // Profile
     property string profileImageOverride: ""
 
+    // CodexBar
+    property bool codexbarTray: true
+    property int  codexbarRefreshSec: 300
+
+    // Theme packs (~/.config/themes/<id>)
+    property string currentTheme: ""
+
     // Shaders
     property string currentShader: "none"
+
+    // Idle / sleep (minutes). 0 = never.
+    property int idleLockMin: 3
+    property int idleScreenOffMin: 6
+    property int idleSleepMin: 20
+    readonly property string idleScript:
+        (Quickshell.env("HOME") || "") + "/.config/hypr/scripts/idle.sh"
+
+    function clampIdle() {
+        if (root.idleLockMin < 0) root.idleLockMin = 0
+        if (root.idleScreenOffMin < 0) root.idleScreenOffMin = 0
+        if (root.idleSleepMin < 0) root.idleSleepMin = 0
+        if (root.idleLockMin > 0 && root.idleScreenOffMin > 0 && root.idleScreenOffMin < root.idleLockMin)
+            root.idleScreenOffMin = root.idleLockMin
+        if (root.idleScreenOffMin > 0 && root.idleSleepMin > 0 && root.idleSleepMin < root.idleScreenOffMin)
+            root.idleSleepMin = root.idleScreenOffMin
+        else if (root.idleLockMin > 0 && root.idleSleepMin > 0 && root.idleSleepMin < root.idleLockMin)
+            root.idleSleepMin = root.idleLockMin
+    }
+
+    Timer {
+        id: idleApplyTimer
+        interval: 400
+        onTriggered: Quickshell.execDetached(["bash", root.idleScript, "apply"])
+    }
+
+    function applyIdle() {
+        root.clampIdle()
+        root.save()
+        idleApplyTimer.restart()
+    }
+
+    function toggleCaffeine() {
+        Quickshell.execDetached(["bash", root.idleScript, "toggle"])
+    }
 
     // Power menu
     // Skin selector shared with utils/PowerMenu.qml.
@@ -194,9 +236,17 @@ Scope {
             powerMenuLifeDark:        String(root.powerMenuLifeDark),
             powerMenuLifeLight:       String(root.powerMenuLifeLight),
             powerMenuCassiniDark:     String(root.powerMenuCassiniDark),
-            powerMenuCassiniLight:    String(root.powerMenuCassiniLight)
+            powerMenuCassiniLight:    String(root.powerMenuCassiniLight),
+            idleLockMin:              root.idleLockMin,
+            idleScreenOffMin:         root.idleScreenOffMin,
+            idleSleepMin:             root.idleSleepMin,
+            codexbarTray:             root.codexbarTray,
+            codexbarRefreshSec:       root.codexbarRefreshSec,
+            currentTheme:             root.currentTheme
         }))
     }
+
+    function reloadFromDisk() { configFile.reload() }
 
     function load() {
         try {
@@ -236,6 +286,12 @@ Scope {
             if (d.powerMenuLifeLight       !== undefined) root.powerMenuLifeLight       = d.powerMenuLifeLight
             if (d.powerMenuCassiniDark     !== undefined) root.powerMenuCassiniDark     = d.powerMenuCassiniDark
             if (d.powerMenuCassiniLight    !== undefined) root.powerMenuCassiniLight    = d.powerMenuCassiniLight
+            if (d.idleLockMin              !== undefined) root.idleLockMin              = d.idleLockMin
+            if (d.idleScreenOffMin         !== undefined) root.idleScreenOffMin         = d.idleScreenOffMin
+            if (d.idleSleepMin             !== undefined) root.idleSleepMin             = d.idleSleepMin
+            if (d.codexbarTray             !== undefined) root.codexbarTray             = d.codexbarTray
+            if (d.codexbarRefreshSec       !== undefined) root.codexbarRefreshSec       = d.codexbarRefreshSec
+            if (d.currentTheme             !== undefined) root.currentTheme             = d.currentTheme
         } catch(e) {
             console.warn("[Configuration] load failed:", e)
         }
@@ -254,8 +310,10 @@ Scope {
         id: configFile
         path: root.configPath
         preload: true
+        watchChanges: true
         onLoaded: { root.load(); root.ready = true; root.writePowerMenuColors() }
         onLoadFailed: root.ready = true
+        onFileChanged: reload()
     }
 
     FileView {

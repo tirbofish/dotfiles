@@ -1,6 +1,13 @@
 #!/usr/bin/env sh
-playerctl play-pause
-sleep 0.2  
+
+case "${1:-toggle}" in
+  next) playerctl next ;;
+  prev|previous) playerctl previous ;;
+  stop) playerctl stop ;;
+  *) playerctl play-pause ;;
+esac
+
+sleep 0.2
 
 status=$(playerctl status 2>/dev/null)
 title=$(playerctl metadata title 2>/dev/null)
@@ -19,14 +26,22 @@ if [ -n "$artUrl" ]; then
     fi
 fi
 
-if [ "$status" = "Playing" ]; then
+case "$1" in
+  next) heading="Next" ;;
+  prev|previous) heading="Previous" ;;
+  stop) heading="Stopped" ;;
+  *)
+    if [ "$status" = "Paused" ]; then
+      heading="Paused"
+    else
+      heading="Playing"
+    fi
+    ;;
+esac
+
+if [ -n "$status" ] || [ -n "$title" ]; then
     notify-send -c media \
         -i "$icon" \
         -h string:x-canonical-private-synchronous:media \
-        "Playing" "$title - $artist"
-elif [ "$status" = "Paused" ]; then
-    notify-send -c media \
-        -i "$icon" \
-        -h string:x-canonical-private-synchronous:media \
-        "Paused" "$title"
+        "$heading" "${title:-}${artist:+ - $artist}"
 fi

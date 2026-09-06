@@ -9,9 +9,38 @@ Item {
     id: root
     property QtObject theme: null
     property string profileImagePath: ""
+    property string category: ""
     signal wallpaperRequested()
     signal toastRequested(string msg)
     implicitHeight: flickable.contentHeight + 4
+
+    function showCat(cat) { return !root.category || root.category === cat }
+
+    function idleLabel(m) {
+        m = Math.round(Number(m) || 0)
+        if (m <= 0) return "Never"
+        if (m === 1) return "1 minute"
+        if (m === 60) return "1 hour"
+        if (m === 90) return "1 hour 30 minutes"
+        if (m === 120) return "2 hours"
+        if (m > 60 && m % 60 === 0) return (m / 60) + " hours"
+        if (m > 60) return Math.floor(m / 60) + " hour " + (m % 60) + " minutes"
+        return m + " minutes"
+    }
+    function setIdle(kind, v) {
+        if (kind === "lock") Lib.Configuration.idleLockMin = v
+        else if (kind === "screen") Lib.Configuration.idleScreenOffMin = v
+        else Lib.Configuration.idleSleepMin = v
+        Lib.Configuration.applyIdle()
+    }
+
+    Lib.CommandPoll {
+        id: caffeinePoll
+        interval: 2000
+        running: root.visible
+        command: ["bash", Lib.Configuration.idleScript, "status"]
+        parse: function(o) { return String(o).trim() === "on" }
+    }
 
     function hexToHsl(hex) {
         hex = String(hex).replace(/[^0-9a-fA-F]/g, '')
@@ -57,6 +86,7 @@ Item {
 
             // 1. APPEARANCE
             SCard {
+                visible: root.showCat("appearance")
                 label: "Appearance"
                 Layout.columnSpan: 2; Layout.fillWidth: true
 
@@ -129,6 +159,7 @@ Item {
 
             //  2. WEATHER API 
             SCard {
+                visible: root.showCat("weather")
                 label: "Weather API"
                 Layout.fillWidth: true; Layout.fillHeight: true
 
@@ -152,8 +183,57 @@ Item {
                 }
             }
 
+            SCard {
+                visible: root.showCat("power")
+                label: "Idle & sleep"
+                Layout.fillWidth: true; Layout.fillHeight: true
+
+                SLabel { text: "Lock screen" }
+                Text {
+                    text: root.idleLabel(lockS.value)
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 18; font.weight: 600
+                    color: root.theme ? root.theme.textPrimary : "#dde5df"
+                }
+                SSlider { id: lockS; from: 0; to: 60; stepSize: 1; value: Lib.Configuration.idleLockMin
+                    onMoved: (v) => setIdle("lock", Math.round(v)) }
+                SDivider {}
+                SLabel { text: "Turn display off" }
+                Text {
+                    text: root.idleLabel(screenS.value)
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 18; font.weight: 600
+                    color: root.theme ? root.theme.textPrimary : "#dde5df"
+                }
+                SSlider { id: screenS; from: 0; to: 90; stepSize: 1; value: Lib.Configuration.idleScreenOffMin
+                    onMoved: (v) => setIdle("screen", Math.round(v)) }
+                SDivider {}
+                SLabel { text: "Sleep" }
+                Text {
+                    text: root.idleLabel(sleepS.value)
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 18; font.weight: 600
+                    color: root.theme ? root.theme.textPrimary : "#dde5df"
+                }
+                SSlider { id: sleepS; from: 0; to: 120; stepSize: 1; value: Lib.Configuration.idleSleepMin
+                    onMoved: (v) => setIdle("sleep", Math.round(v)) }
+                SDivider {}
+                SToggle {
+                    label: "Caffeinate (stay awake)"
+                    checked: caffeinePoll.value === true
+                    onToggled: (v) => {
+                        caffeinePoll.value = v
+                        Quickshell.execDetached(["bash", Lib.Configuration.idleScript, v ? "on" : "off"])
+                    }
+                }
+                Text {
+                    text: "Caffeinate blocks lock, display-off, and suspend until you turn it off."
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 12
+                    color: root.theme ? root.theme.textSecondary : "#888"; opacity: 0.7
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+            }
+
             //  2b. POWER MENU 
             SCard {
+                visible: root.showCat("power")
                 label: "Power Menu"
                 Layout.fillWidth: true; Layout.fillHeight: true
 
@@ -220,6 +300,7 @@ Item {
 
             //  3. LAYOUT & TASKBAR
             SCard {
+                visible: root.showCat("layout")
                 label: "Layout & Taskbar"
                 Layout.fillWidth: true; Layout.fillHeight: true
 
@@ -252,6 +333,9 @@ Item {
                     }
                 }
                 SDivider {}
+                SToggle { label: "Show tray"; checked: Lib.Configuration.barShowTray
+                    onToggled: (v)=>{ Lib.Configuration.barShowTray=v; Lib.Configuration.save() } }
+                SDivider {}
                 SToggle { label: "Custom taskbar BG"; checked: Lib.Configuration.taskbarCustomBg
                     onToggled: (v)=>{ Lib.Configuration.taskbarCustomBg=v; Lib.Configuration.save() }
                 }
@@ -263,6 +347,7 @@ Item {
 
             //  4. POINTERS
             SCard {
+                visible: root.showCat("mouse")
                 label: "Mouse"
                 Layout.fillWidth: true; Layout.fillHeight: true
 
@@ -286,6 +371,7 @@ Item {
             }
 
             SCard {
+                visible: root.showCat("touchpad")
                 label: "Touchpad"
                 Layout.fillWidth: true; Layout.fillHeight: true
 
@@ -310,6 +396,7 @@ Item {
 
             //  5. SCREEN BORDERS
             SCard {
+                visible: root.showCat("borders")
                 label: "Screen Borders"
                 Layout.fillWidth: true; Layout.fillHeight: true
 
@@ -342,8 +429,199 @@ Item {
                 }
             }
 
-            //  6. PROFILE & EVENTS
             SCard {
+                visible: root.showCat("themes")
+                label: "Themes"
+                onVisibleChanged: if (visible) Lib.ThemePackService.refresh()
+                Layout.columnSpan: 2; Layout.fillWidth: true
+
+                Text {
+                    text: "A theme pack is a folder in ~/.config/themes with wallpaper, Kitty startup image, and anything else added later. Ask for a new pack and it lands here."
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 12
+                    color: root.theme ? root.theme.textSecondary : "#888"; opacity: 0.8
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+                Text {
+                    visible: Lib.ThemePackService.packCount === 0
+                    text: Lib.ThemePackService.error !== ""
+                        ? Lib.ThemePackService.error
+                        : "Loading theme packs…"
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 13
+                    color: root.theme ? root.theme.textSecondary : "#888"
+                }
+                Flow {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    Repeater {
+                        model: Lib.ThemePackService.packCount
+                        delegate: Rectangle {
+                            required property int index
+                            readonly property var modelData: Lib.ThemePackService.packs[index] || ({})
+                            width: 168; height: 148; radius: 10
+                            color: root.theme ? root.theme.bgItem : "#2d353b"
+                            border.width: 1
+                            border.color: modelData.active || Lib.ThemePackService.currentId === modelData.id
+                                ? (root.theme ? root.theme.accent : "#7aa1a6")
+                                : (root.theme ? root.theme.outline : "#333")
+                            clip: true
+                            Image {
+                                anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                                height: 92
+                                source: modelData.wallpaper ? ("file://" + modelData.wallpaper) : ""
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true; smooth: true
+                            }
+                            Rectangle {
+                                visible: !modelData.wallpaper
+                                anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                                height: 92
+                                color: root.theme ? root.theme.bgCard : "#1e2326"
+                            }
+                            Column {
+                                anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+                                anchors.margins: 8
+                                spacing: 2
+                                Text {
+                                    text: modelData.name
+                                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 13; font.weight: 600
+                                    color: root.theme ? root.theme.textPrimary : "#dde5df"
+                                    elide: Text.ElideRight; width: parent.width
+                                }
+                                Text {
+                                    text: (modelData.active ? "Active · " : "") + (modelData.mode || "dark")
+                                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 11
+                                    color: root.theme ? root.theme.textSecondary : "#888"
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Lib.ThemePackService.apply(modelData.id)
+                            }
+                        }
+                    }
+                }
+                Text {
+                    visible: Lib.ThemePackService.error !== ""
+                    text: Lib.ThemePackService.error
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 12
+                    color: root.theme ? root.theme.accentRed : "#e67e80"
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+            }
+
+            SCard {
+                visible: root.showCat("codexbar")
+                label: "CodexBar"
+                Layout.columnSpan: 2; Layout.fillWidth: true
+
+                Text {
+                    text: "Uses the local `codexbar` CLI (~/.local/bin/codexbar) and your CodexBar config. Tray icon sits in the bar tray; add a desktop widget with Super+Shift+W."
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 12
+                    color: root.theme ? root.theme.textSecondary : "#888"; opacity: 0.8
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+                SToggle { label: "Show in tray"
+                    checked: Lib.Configuration.codexbarTray
+                    onToggled: (v) => { Lib.Configuration.codexbarTray = v; Lib.Configuration.save() } }
+                SDivider {}
+                RowLayout {
+                    Layout.fillWidth: true
+                    SLabel { text: "Refresh" }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: Lib.Configuration.codexbarRefreshSec < 60
+                            ? (Lib.Configuration.codexbarRefreshSec + "s")
+                            : (Math.round(Lib.Configuration.codexbarRefreshSec / 60) + " min")
+                        font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 14
+                        color: root.theme ? root.theme.textSecondary : "#888"
+                    }
+                }
+                SSlider { from: 60; to: 900; stepSize: 30; value: Lib.Configuration.codexbarRefreshSec
+                    onMoved: (v) => { Lib.Configuration.codexbarRefreshSec = Math.round(v); Lib.Configuration.save() } }
+                SDivider {}
+                SLabel {
+                    text: "Providers" + (Lib.CodexBarService.catalog.length
+                        ? ("  ·  " + Lib.CodexBarService.catalog.filter(function(p){ return p.enabled }).length + " on")
+                        : "")
+                }
+                Text {
+                    visible: Lib.CodexBarService.catalog.length === 0
+                    text: "Loading providers from codexbar…"
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 13
+                    color: root.theme ? root.theme.textSecondary : "#888"
+                }
+                Repeater {
+                    model: Lib.CodexBarService.catalog
+                    delegate: SToggle {
+                        required property var modelData
+                        label: modelData.name
+                        checked: modelData.enabled
+                        onToggled: (v) => Lib.CodexBarService.setProviderEnabled(modelData.id, v)
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    SBtn { label: "Refresh now"; accent: true
+                        onTriggered: Lib.CodexBarService.refresh() }
+                    Item { Layout.fillWidth: true }
+                    SBtn { label: "Add widget"
+                        onTriggered: Lib.WidgetService.setEditing(true) }
+                }
+                Text {
+                    visible: Lib.CodexBarService.error !== ""
+                    text: Lib.CodexBarService.error
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 12
+                    color: root.theme ? root.theme.accentRed : "#e67e80"
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+            }
+
+            //  6. DESKTOP WIDGETS
+            SCard {
+                visible: root.showCat("widgets")
+                label: "Desktop widgets"
+                Layout.columnSpan: 2; Layout.fillWidth: true
+
+                Text {
+                    text: "Layouts are saved per set of connected displays. Plug in a monitor, place widgets, and that arrangement is restored the next time those screens are together."
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 12
+                    color: root.theme ? root.theme.textSecondary : "#888"; opacity: 0.8
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+                RowLayout {
+                    Layout.fillWidth: true; spacing: 8
+                    SBtn {
+                        label: Lib.WidgetService.editing ? "Stop editing" : "Edit widgets"
+                        accent: true
+                        onTriggered: Lib.WidgetService.toggleEditing()
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: "Super+Shift+W"
+                        font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 12
+                        color: root.theme ? root.theme.textSecondary : "#888"
+                    }
+                }
+            }
+
+            SCard {
+                visible: root.showCat("sound")
+                label: "Sound"
+                Layout.columnSpan: 2; Layout.fillWidth: true
+                Lib.AudioDevicePicker { theme: root.theme; Layout.fillWidth: true }
+            }
+
+            SCard {
+                visible: root.showCat("displays")
+                label: "Displays"
+                Layout.columnSpan: 2; Layout.fillWidth: true
+                MonitorsPanel { theme: root.theme; Layout.fillWidth: true }
+            }
+
+            //  7. PROFILE & EVENTS
+            SCard {
+                visible: root.showCat("profile")
                 label: "Profile & Events"
                 Layout.columnSpan: 2; Layout.fillWidth: true
 

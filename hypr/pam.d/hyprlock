@@ -1,0 +1,5 @@
+#%PAM-1.0
+# Password unlock only. Biopass is started by lock.sh after a 1s buffer
+# so the camera does not turn on the instant the lock screen appears.
+
+auth        include     login

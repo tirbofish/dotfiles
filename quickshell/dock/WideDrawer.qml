@@ -187,14 +187,22 @@ PanelWindow {
         rebuild()
     }
 
+    function persistShader(path) {
+        var name = (path === "OFF") ? "none" : String(path).split("/").pop()
+        Quickshell.execDetached(["bash", "-c",
+            "mkdir -p \"$HOME/.cache/quickshell\"; printf '%s' '" + name + "' > \"$HOME/.cache/quickshell/current_shader\""])
+    }
+
     function applyShader(path) {
         drawerWin.close()
+        persistShader(path)
         var hop = 'active=$(hyprctl workspaces -j | jq ".[] | .id"); ws=1; '
                 + 'while echo "$active" | grep -q "^$ws$"; do ws=$((ws+1)); done; '
                 + 'hyprctl dispatch "hl.dsp.focus({ workspace = $ws })" >/dev/null 2>&1; '
-        var act = (path === "OFF")
-            ? 'hyprctl reload >/dev/null 2>&1'
-            : 'hyprctl eval "hl.config({ decoration = { screen_shader = \\"' + path + '\\" } })" >/dev/null 2>&1'
+        // Reload used to mean "clear shader", but the config now restores the
+        // persisted shader. Clear it in-place instead.
+        var shader = (path === "OFF") ? "" : path
+        var act = 'hyprctl eval "hl.config({ decoration = { screen_shader = \\"' + shader + '\\" } })" >/dev/null 2>&1'
         Lib.Shell.det(hop + act)
     }
 

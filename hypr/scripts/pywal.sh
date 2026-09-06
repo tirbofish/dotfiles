@@ -16,7 +16,32 @@ accent="$(jq -r '.colors.color4' "$colors")"
 secondary="$(jq -r '.colors.color6' "$colors")"
 danger="$(jq -r '.colors.color1' "$colors")"
 muted="$(jq -r '.colors.color8' "$colors")"
+surface="$(jq -r '.colors.color0' "$colors")"
 wallpaper="$(jq -r '.wallpaper' "$colors")"
+bg="${background#\#}"
+fg="${foreground#\#}"
+ac="${accent#\#}"
+se="${secondary#\#}"
+dn="${danger#\#}"
+mu="${muted#\#}"
+sf="${surface#\#}"
+
+rgb_dec() {
+  local h="${1#\#}"
+  printf '%d, %d, %d' "$((16#${h:0:2}))" "$((16#${h:2:2}))" "$((16#${h:4:2}))"
+}
+
+# Lift the wallpaper background toward the foreground so notification
+# chrome matches shell cards instead of a flat special.background hole.
+card="$(python3 -c "
+def rgb(h):
+    h = h.lstrip('#')
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+a, b = rgb('$background'), rgb('$foreground')
+t = 0.14
+print('#' + ''.join(f'{round(a[i]*(1-t)+b[i]*t):02x}' for i in range(3)))
+")"
+card_fill="${card}ee"
 
 settings="$HOME/.config/quickshell/lib/usersettings.json"
 if [[ -f "$settings" ]]; then
@@ -37,24 +62,81 @@ if [[ -f "$settings" ]]; then
   mv "$settings.tmp" "$settings"
 fi
 
+mkdir -p "$HOME/.config/hypremoji"
+cat > "$HOME/.config/hypremoji/style.css" <<EOF
+:root {
+    --primary-col: ${accent};
+    --primary-col-glow: ${accent}aa;
+    --gray: ${muted};
+    --bg-col: ${background};
+    --input-text-col: ${foreground};
+    --btn-list-col: ${background};
+    --entry-unfocus: ${danger};
+    --btn-list-col-hover: ${secondary};
+    --btn-list-col-hover-glow: ${secondary}77;
+    --btn-nav-col: ${muted};
+    --btn-nav-col-hover: ${background};
+    --emoji-font: "Noto Color Emoji";
+}
+EOF
+
 cat > "$HOME/.cache/wal/tirbofish-hyprland.lua.tmp" <<EOF
 return {
-  active_border = { colors = { "rgba(${accent#\#}ee)", "rgba(${secondary#\#}ee)" }, angle = 45 },
-  inactive_border = "rgba(${background#\#}aa)",
-  accent = "rgb(${accent#\#})",
-  secondary = "rgb(${secondary#\#})",
-  background = "rgb(${background#\#})",
-  foreground = "rgb(${foreground#\#})"
+  active_border = { colors = { "rgba(${ac}ee)", "rgba(${se}ee)" }, angle = 45 },
+  inactive_border = "rgba(${bg}aa)",
+  accent = "rgb(${ac})",
+  secondary = "rgb(${se})",
+  background = "rgb(${bg})",
+  foreground = "rgb(${fg})",
+  danger = "rgb(${dn})",
+  muted = "rgb(${mu})",
+  shadow = "rgba(${bg}44)"
 }
 EOF
 mv "$HOME/.cache/wal/tirbofish-hyprland.lua.tmp" "$HOME/.cache/wal/tirbofish-hyprland.lua"
 
-hyprctl eval "hl.config({ general = {
-  [\"col.active_border\"] = {
-    colors = { \"rgba(${accent#\#}ee)\", \"rgba(${secondary#\#}ee)\" }, angle = 45
+cat > "$HOME/.config/hypr/hyprtoolkit.conf.tmp" <<EOF
+background = rgb($(rgb_dec "$background"))
+base = rgb($(rgb_dec "$surface"))
+text = rgb($(rgb_dec "$foreground"))
+alternate_base = rgb($(rgb_dec "$muted"))
+bright_text = rgb($(rgb_dec "$foreground"))
+link_text = rgb($(rgb_dec "$accent"))
+accent = rgb($(rgb_dec "$accent"))
+accent_secondary = rgb($(rgb_dec "$secondary"))
+
+rounding_large = 12
+rounding_small = 8
+
+h1_size = 19
+h2_size = 15
+h3_size = 13
+font_size = 12
+small_font_size = 10
+font_family = Manrope
+font_family_monospace = JetBrainsMono Nerd Font
+EOF
+mv "$HOME/.config/hypr/hyprtoolkit.conf.tmp" "$HOME/.config/hypr/hyprtoolkit.conf"
+
+hyprctl eval "hl.config({
+  general = {
+    [\"col.active_border\"] = {
+      colors = { \"rgba(${ac}ee)\", \"rgba(${se}ee)\" }, angle = 45
+    },
+    [\"col.inactive_border\"] = \"rgba(${bg}aa)\"
   },
-  [\"col.inactive_border\"] = \"rgba(${background#\#}aa)\"
-} })" >/dev/null 2>&1 || true
+  decoration = {
+    shadow = { color = \"rgba(${bg}44)\" }
+  },
+  group = {
+    groupbar = {
+      [\"col.active\"] = \"rgb(${ac})\",
+      [\"col.inactive\"] = \"rgb(${bg})\",
+      text_color = \"rgb(${bg})\",
+      text_color_inactive = \"rgb(${fg})\"
+    }
+  }
+})" >/dev/null 2>&1 || true
 hyprctl reload config-only >/dev/null 2>&1 || true
 
 mkdir -p "$HOME/.local/state/theme"
@@ -120,13 +202,15 @@ EOF
 mv "$HOME/.cache/wal/tirbofish.rasi.tmp" "$HOME/.cache/wal/tirbofish.rasi"
 
 cat > "$HOME/.cache/wal/tirbofish-hyprlock.conf.tmp" <<EOF
-\$wal_background = rgba(${background#\#}ff)
-\$wal_foreground = rgba(${foreground#\#}ff)
-\$wal_foreground_dim = rgba(${foreground#\#}b3)
-\$wal_accent = rgba(${accent#\#}ff)
-\$wal_accent_dim = rgba(${accent#\#}cc)
-\$wal_secondary = rgba(${secondary#\#}ff)
-\$wal_danger = rgba(${danger#\#}ff)
+\$wal_background = rgba(${bg}ff)
+\$wal_foreground = rgba(${fg}ff)
+\$wal_foreground_dim = rgba(${fg}b3)
+\$wal_accent = rgba(${ac}ff)
+\$wal_accent_dim = rgba(${ac}cc)
+\$wal_secondary = rgba(${se}ff)
+\$wal_danger = rgba(${dn}ff)
+\$wal_dim = rgba(${bg}b3)
+\$wal_shadow = rgba(${bg}80)
 \$wal_wallpaper = $wallpaper
 EOF
 mv "$HOME/.cache/wal/tirbofish-hyprlock.conf.tmp" "$HOME/.cache/wal/tirbofish-hyprlock.conf"
@@ -135,26 +219,36 @@ for dunst in "$HOME/.config/dunst/dunstrc" \
              "$HOME/.config/dunst/dunstrc_dark" \
              "$HOME/.config/dunst/dunstrc_light"; do
   if [[ ! -f "$dunst" ]]; then continue; fi
-  awk -v bg="$background" -v fg="$foreground" -v accent="$accent" \
-      -v secondary="$secondary" -v danger="$danger" '
+  awk -v bg="$card_fill" -v fg="$foreground" -v accent="$accent" \
+      -v muted="$muted" -v danger="$danger" '
     /^\[urgency_/ { section=$0 }
     section == "[urgency_low]" && $1 == "background"  { print "    background = \"" bg "\""; next }
     section == "[urgency_low]" && $1 == "foreground"  { print "    foreground = \"" fg "\""; next }
-    section == "[urgency_low]" && $1 == "frame_color" { print "    frame_color = \"" secondary "\""; next }
+    section == "[urgency_low]" && $1 == "frame_color" { print "    frame_color = \"" muted "\""; next }
     section == "[urgency_low]" && $1 == "highlight"   { print "    highlight = \"" accent "\""; next }
     section == "[urgency_normal]" && $1 == "background"  { print "    background = \"" bg "\""; next }
     section == "[urgency_normal]" && $1 == "foreground"  { print "    foreground = \"" fg "\""; next }
     section == "[urgency_normal]" && $1 == "frame_color" { print "    frame_color = \"" accent "\""; next }
-    section == "[urgency_normal]" && $1 == "highlight"   { print "    highlight = \"" secondary "\""; next }
-    section == "[urgency_critical]" && $1 == "background"  { print "    background = \"" danger "\""; next }
-    section == "[urgency_critical]" && $1 == "foreground"  { print "    foreground = \"" bg "\""; next }
+    section == "[urgency_normal]" && $1 == "highlight"   { print "    highlight = \"" accent "\""; next }
+    section == "[urgency_critical]" && $1 == "background"  { print "    background = \"" bg "\""; next }
+    section == "[urgency_critical]" && $1 == "foreground"  { print "    foreground = \"" fg "\""; next }
     section == "[urgency_critical]" && $1 == "frame_color" { print "    frame_color = \"" danger "\""; next }
-    section == "[urgency_critical]" && $1 == "highlight"   { print "    highlight = \"" fg "\""; next }
+    section == "[urgency_critical]" && $1 == "highlight"   { print "    highlight = \"" danger "\""; next }
     { print }
   ' "$dunst" > "$dunst.tmp"
   mv "$dunst.tmp" "$dunst"
 done
-systemctl --user try-restart dunst.service >/dev/null 2>&1 || true
+if ! dunstctl reload >/dev/null 2>&1; then
+  if systemctl --user is-active --quiet dunst.service; then
+    systemctl --user restart dunst.service >/dev/null 2>&1 || true
+  else
+    killall dunst >/dev/null 2>&1 || true
+    sleep 0.2
+    dunst >/dev/null 2>&1 &
+  fi
+fi
+
+python3 "$HOME/.config/hypr/scripts/vscode-wal.py" "$colors" "$mode" >/dev/null 2>&1 || true
 
 legacy_theme="$HOME/.config/quickshell/theme.js"
 if [[ -f "$legacy_theme" ]]; then

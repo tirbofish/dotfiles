@@ -24,6 +24,13 @@ PanelWindow {
             win.monitorsMode = true
         }
 
+        function showBattery() {
+            win.wallpaperMode = false
+            win.settingsPanelOpen = false
+            win.monitorsMode = false
+            win.batteryCardActive = true
+        }
+
         function closeAll() {
             win.settingsPanelOpen = false
             win.wallpaperMode = false
@@ -114,12 +121,8 @@ PanelWindow {
             Keys.onPressed: (event) => {
                 // Press 'S' to toggle settings panel
                 if (event.key === Qt.Key_S) {
-                    if (win.wallpaperMode) {
-                        win.wallpaperMode = false
-                    } else {
-                        win.settingsPanelOpen = !win.settingsPanelOpen
-                        if (win.settingsPanelOpen) win.monitorsMode = false
-                    }
+                    Lib.Overlays.openSettings()
+                    closeAll()
                     event.accepted = true
                 }
                 // Press 'W' to toggle wallpaper panel
@@ -376,12 +379,8 @@ PanelWindow {
                         }
                     }
                     onSettingsRequested: {
-                        if (win.wallpaperMode) {
-                            win.wallpaperMode = false
-                        } else {
-                            win.settingsPanelOpen = !win.settingsPanelOpen
-                            if (win.settingsPanelOpen) win.monitorsMode = false
-                        }
+                        Lib.Overlays.openSettings()
+                        closeAll()
                     }
                 }
 
