@@ -26,6 +26,7 @@ Scope {
         { type: "media",    label: "Now playing",  w: 320, h: 118 },
         { type: "stats",    label: "System",       w: 280, h: 176 },
         { type: "notes",    label: "Notes",        w: 280, h: 180 },
+        { type: "todo",     label: "Todo",         w: 280, h: 240 },
         { type: "cava",     label: "Visualizer",   w: 320, h: 88  },
         { type: "codexbar", label: "CodexBar",     w: 280, h: 176 }
     ]
@@ -210,14 +211,27 @@ Scope {
 
     function save() { writeTimer.restart() }
 
+    // Our own writes bounce back through FileView.onLoaded. Reloading scenes
+    // recreates every widget and drops notes/todo keyboard focus after the
+    // save debounce, so ignore that echo.
+    property bool suppressLoad: false
+
     Timer {
         id: writeTimer
         interval: 80
         onTriggered: root._flush()
     }
 
+    Timer {
+        id: unsuppressLoad
+        interval: 400
+        onTriggered: root.suppressLoad = false
+    }
+
     function _flush() {
+        root.suppressLoad = true
         configFile.setText(JSON.stringify({ scenes: root.scenes }, null, 2) + "\n")
+        unsuppressLoad.restart()
     }
 
     function load() {
@@ -241,7 +255,16 @@ Scope {
         id: configFile
         path: root.configPath
         preload: true
-        onLoaded: { root.load(); root.ready = true; root.ensureScene(); lateBind.restart() }
+        onLoaded: {
+            if (root.suppressLoad)
+                return
+            root.load()
+            var first = !root.ready
+            root.ready = true
+            root.ensureScene()
+            if (first)
+                lateBind.restart()
+        }
         onLoadFailed: { root.ready = true; root.ensureScene(); lateBind.restart() }
     }
 

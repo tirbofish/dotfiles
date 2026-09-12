@@ -79,8 +79,16 @@ end
 local wanted_cursor = theme_mode() == "light" and "Saturnian-Day" or "Saturnian-Night"
 local cursor_theme  = cursor_installed(wanted_cursor) and wanted_cursor or "Adwaita"
 local snappy_switcher = local_binary_or_command("snappy-switcher")
+local hyprfloat = local_binary_or_command("hyprfloat")
 local vicinae = local_binary_or_command("vicinae")
 
+-- Work around rejected Intel/dock modesets; takes effect on the next login.
+-- AQ_NO_MODIFIERS: LINEAR GBM buffers. AQ_NO_ATOMIC: skip atomic TEST_ONLY.
+-- After MST renames DP-4 -> DP-3, every atomic modeset on the ultrawide is
+-- EINVAL (even 640x480) and the output stays 0x0 until a compositor restart
+-- with the legacy DRM path.
+hl.env("AQ_NO_MODIFIERS", "1")
+hl.env("AQ_NO_ATOMIC", "1")
 hl.env("HYPRCURSOR_THEME", cursor_theme)
 hl.env("HYPRCURSOR_SIZE",  "32")
 hl.env("XCURSOR_THEME",    cursor_theme)
@@ -100,16 +108,17 @@ hl.env("ELECTRON_OZONE_PLATFORM_HINT", "wayland")
 -- The installer rewrites the blocks below from what you enter on its monitor
 -- screen. Editing them by hand afterwards is fine, keep them at the top level.
 -- BEGIN installer-managed monitors
-hl.monitor({
-    output   = "eDP-1",
-    mode     = "2880x1920@60",
-    position = "0x0",
-    scale    = 2,
-    bitdepth = 10
-})
+-- hl.monitor({
+--     output   = "eDP-1",
+--     mode     = "preferred",
+--     position = "0x0",
+--     scale    = 2,
+--     bitdepth = 10
+-- })
 -- END installer-managed monitors
--- External outputs are applied later by MonitorService once they have a real mode.
--- Forcing saved modes here at parse time left DP-3 at 0x0 with no signal.
+-- Saved layouts (desc: selectors) live in ~/.config/quickshell/lib/monitors.json.
+-- Pyprland plus the apply script retry 0x0 MST hotplugs; do not name DP-*.
+persist.apply_monitors()
 
 local function set_wallpapers()
     hl.exec_cmd(scripts .. "/wallpaper.sh")
@@ -121,7 +130,12 @@ local function set_wallpapers_delayed()
     hl.timer(set_wallpapers, { timeout = 500, type = "oneshot" })
 end
 
-hl.on("monitor.added",   set_wallpapers_delayed)
+local function apply_monitors_delayed()
+    hl.exec_cmd(scripts .. "/pypr-apply-monitors.py")
+    set_wallpapers_delayed()
+end
+
+hl.on("monitor.added",   apply_monitors_delayed)
 hl.on("monitor.removed", set_wallpapers_delayed)
 
 hl.permission("/usr/(bin|local/bin)/hyprpm", "plugin", "allow")
@@ -137,11 +151,13 @@ end
 hl.on("hyprland.start", function()
     hl.exec_cmd("hyprpm reload")
     hl.exec_cmd("qs")
+    hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE && systemctl --user stop kanshi.service; systemctl --user restart pyprland.service")
     hl.exec_cmd("awww-daemon")
     hl.exec_cmd("hypridle")
     hl.exec_cmd(vicinae .. " server --replace")
     -- logind's default HandlePowerKey=poweroff wins unless we inhibit it.
     hl.exec_cmd("systemctl --user start hypr-power-key-lock.service")
+    hl.exec_cmd("systemctl --user start cpu-starvation-guard.service")
     hl.exec_cmd("dunst")
     hl.exec_cmd("pgrep -ax wl-paste | grep -q -- '--type text --watch cliphist' || wl-paste --type text --watch cliphist store")
     hl.exec_cmd("pgrep -ax wl-paste | grep -q -- '--type image --watch cliphist' || wl-paste --type image --watch cliphist store")
@@ -153,6 +169,10 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("[ -f $HOME/.config/vdirsyncer/config ] && vdirsyncer sync || true")
     hl.exec_cmd("sleep 1 && mpv --no-video --volume=100 " .. home .. "/.config/hypr/sounds/startup.wav")
     hl.timer(set_wallpapers, { timeout = 1500, type = "oneshot" }) -- after awww-daemon is up
+    -- Dock already plugged at login: MST rename lands a few seconds later.
+    hl.timer(function()
+        hl.exec_cmd(scripts .. "/pypr-apply-monitors.py")
+    end, { timeout = 2500, type = "oneshot" })
     -- Devices do not exist yet when this file is first parsed.
     hl.timer(apply_input_devices, { timeout = 400, type = "oneshot" })
 end)
@@ -312,7 +332,14 @@ hl.config({
         resize_on_border      = true,
         extend_border_grab_area = 15,
         allow_tearing         = false,
-        layout                = "dwindle"
+        layout                = "dwindle",
+        snap = {
+            enabled        = true,
+            window_gap     = 10,
+            monitor_gap    = 10,
+            border_overlap = true,
+            respect_gaps   = true,
+        },
     },
     decoration = {
         rounding         = 7,
@@ -443,6 +470,20 @@ hl.animation({ leaf = "fadeLayersOut", enabled = true, speed = 2, bezier = "md3_
 -- Gestures
 -- =========================================================================
 hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })
+hl.gesture({
+    fingers = 3,
+    direction = "down",
+    action = function()
+        hl.exec_cmd(scripts .. "/desktop-mode.sh down")
+    end,
+})
+hl.gesture({
+    fingers = 3,
+    direction = "up",
+    action = function()
+        hl.exec_cmd(scripts .. "/desktop-mode.sh up")
+    end,
+})
 
 local hymission = hl.plugin and hl.plugin.hymission
 if hymission then
@@ -451,7 +492,6 @@ if hymission then
         only_active_workspace = 1,
         workspace_strip_empty_mode = "existing",
     } } })
-    hymission.gesture({ fingers = 3, direction = "vertical", action = "toggle", args = "onlycurrentworkspace" })
 end
 
 -- Additional plugin hooks: ~/.config/hypr/plugins/init.lua
@@ -498,12 +538,69 @@ hl.bind(mod .. " + X", hl.dsp.window.close())
 hl.bind(mod .. " + N", hl.dsp.exec_cmd(scripts .. "/minimized-windows.sh hide"), { description = "Minimize window" })
 hl.bind(mod .. " + SHIFT + N", hl.dsp.exec_cmd(scripts .. "/minimized-windows.sh menu"), { description = "Restore minimized window" })
 hl.bind(mod .. " + F", hl.dsp.window.float({ action = "toggle" }))
+hl.bind(mod .. " + SHIFT + F", hl.dsp.exec_cmd(hyprfloat .. " togglefloat"), { description = "Toggle workspace / tiled mode" })
 hl.bind(mod .. " + " .. alt .. " + F", function()
     hl.dispatch(hl.dsp.window.float({ action = "set" }))
     hl.dispatch(hl.dsp.window.resize({ x = 900, y = 600 }))
     hl.dispatch(hl.dsp.window.center())
 end)
-hl.bind(mod .. " + M", function() hl.dispatch(hl.dsp.window.fullscreen()) end)
+local float_max_saved = {}
+local function monitor_work_area(mon)
+    mon = mon or hl.get_active_monitor()
+    if not mon then return nil end
+    local scale = (mon.scale and mon.scale > 0) and mon.scale or 1
+    local r = mon.reserved or {}
+    local gap = 3
+    local border = 1
+    local pad = gap + border
+    local left, right = r.left or 0, r.right or 0
+    local top, bottom = r.top or 0, r.bottom or 0
+    return {
+        x = (mon.x or 0) + left + pad,
+        y = (mon.y or 0) + top + pad,
+        w = mon.width / scale - left - right - 2 * pad,
+        h = mon.height / scale - top - bottom - 2 * pad,
+    }
+end
+local function window_geom(win)
+    local at, size = win.at or {}, win.size or {}
+    return {
+        x = at.x or at[1] or 0,
+        y = at.y or at[2] or 0,
+        w = size.x or size.width or size[1] or 0,
+        h = size.y or size.height or size[2] or 0,
+    }
+end
+local function place_floating(x, y, w, h)
+    hl.dispatch(hl.dsp.window.resize({ x = math.floor(w), y = math.floor(h), relative = false }))
+    hl.dispatch(hl.dsp.window.move({ x = math.floor(x), y = math.floor(y), relative = false }))
+end
+hl.bind(mod .. " + M", function()
+    local win = hl.get_active_window()
+    if not win then return end
+    if win.floating then
+        local area = monitor_work_area()
+        if not area or area.w < 50 or area.h < 50 then return end
+        local addr = tostring(win.address)
+        local g = window_geom(win)
+        local filled = math.abs(g.x - area.x) <= 10 and math.abs(g.y - area.y) <= 10
+            and math.abs(g.w - area.w) <= 20 and math.abs(g.h - area.h) <= 20
+        if filled and float_max_saved[addr] then
+            local prev = float_max_saved[addr]
+            place_floating(prev.x, prev.y, prev.w, prev.h)
+            float_max_saved[addr] = nil
+        else
+            float_max_saved[addr] = g
+            place_floating(area.x, area.y, area.w, area.h)
+        end
+        return
+    end
+    hl.dispatch(hl.dsp.window.fullscreen({
+        mode = "maximized",
+        action = "toggle",
+        layout_aware = false,
+    }))
+end, { description = "Maximize" })
 -- hl.bind(mod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mod .. " + SHIFT + DOWN", hl.dsp.layout("togglesplit"))
 hl.bind(mod .. " + SHIFT + UP",   hl.dsp.layout("togglesplit"))
@@ -528,14 +625,45 @@ end)
 
 hl.bind(mod .. " + CTRL + left",  hl.dsp.focus({ workspace = "m-1" }))
 hl.bind(mod .. " + CTRL + right", hl.dsp.focus({ workspace = "m+1" }))
-if hymission then
-    hl.bind(mod .. " + CTRL + up", function()
-        hymission.open("onlycurrentworkspace")
-    end, { description = "Mission Control" })
-    hl.bind(mod .. " + CTRL + down", function()
-        hymission.close()
-    end, { description = "Close Mission Control" })
+hl.bind(mod .. " + CTRL + down", hl.dsp.exec_cmd(scripts .. "/desktop-mode.sh down"), { description = "Show desktop" })
+hl.bind(mod .. " + CTRL + up", hl.dsp.exec_cmd(scripts .. "/desktop-mode.sh up"), { description = "Restore desktop / Mission Control" })
+
+local desktop_hidden_state = (os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/tirbofish-desktop-mode/windows.json"
+local function hidden_window_addresses()
+    local f = io.open(desktop_hidden_state, "r")
+    if not f then return nil end
+    local raw = f:read("*a") or ""
+    f:close()
+    local addrs = {}
+    for addr in raw:gmatch('"address"%s*:%s*"([^"]+)"') do
+        addrs[addr] = true
+    end
+    return next(addrs) and addrs or nil
 end
+local function window_contains(win, px, py)
+    if not win then return false end
+    local at, size = win.at or {}, win.size or {}
+    local x = at.x or at[1] or 0
+    local y = at.y or at[2] or 0
+    local w = size.x or size.width or size[1] or 0
+    local h = size.y or size.height or size[2] or 0
+    return px >= x and py >= y and px < x + w and py < y + h
+end
+hl.bind("mouse:272", function()
+    local addrs = hidden_window_addresses()
+    if not addrs then return end
+    local pos = hl.get_cursor_pos()
+    if not pos then return end
+    local px, py = pos.x or pos[1], pos.y or pos[2]
+    if not px or not py then return end
+    for _, win in ipairs(hl.get_windows({ mapped = true }) or {}) do
+        local addr = win.address and tostring(win.address)
+        if addr and addrs[addr] and window_contains(win, px, py) then
+            hl.exec_cmd(scripts .. "/desktop-mode.sh hide")
+            return
+        end
+    end
+end, { non_consuming = true, description = "Restore desktop from peeked window" })
 
 hl.bind(mod .. " + " .. alt .. " + F4", hl.dsp.exec_cmd("hyprctl dispatch 'hl.dsp.exit()'"))
 hl.bind(alt .. " + F4", hl.dsp.exec_cmd("hyprctl layers | grep -q power-menu || quickshell -p ~/.config/quickshell/utils/PowerMenu.qml"))
@@ -550,16 +678,12 @@ hl.on("window.active", function()
     hl.dispatch(hl.dsp.window.bring_to_top())
 end)
 
-if hymission then
-    hl.bind(mod .. " + TAB", function()
-        hymission.toggle("onlycurrentworkspace")
-    end, { description = "Mission Control" })
-end
+hl.bind(mod .. " + TAB", hl.dsp.exec_cmd(scripts .. "/desktop-mode.sh mission-toggle"), { description = "Mission Control" })
 
-hl.bind(mod .. " + left",  hl.dsp.exec_cmd(scripts .. "/golden-focus.sh left"))
-hl.bind(mod .. " + right", hl.dsp.exec_cmd(scripts .. "/golden-focus.sh right"))
-hl.bind(mod .. " + up",    hl.dsp.exec_cmd(scripts .. "/golden-focus.sh up"))
-hl.bind(mod .. " + down",  hl.dsp.exec_cmd(scripts .. "/golden-focus.sh down"))
+hl.bind(mod .. " + left",  hl.dsp.exec_cmd(hyprfloat .. " dynamicbind SUPER_LEFT"),  { description = "Snap left / focus left" })
+hl.bind(mod .. " + right", hl.dsp.exec_cmd(hyprfloat .. " dynamicbind SUPER_RIGHT"), { description = "Snap right / focus right" })
+hl.bind(mod .. " + up",    hl.dsp.exec_cmd(hyprfloat .. " dynamicbind SUPER_UP"),    { description = "Snap top / focus up" })
+hl.bind(mod .. " + down",  hl.dsp.exec_cmd(hyprfloat .. " dynamicbind SUPER_DOWN"),  { description = "Snap bottom / focus down" })
 
 hl.bind(mod .. " + CTRL + SHIFT + left",  hl.dsp.window.swap({ direction = "l" }), { description = "Swap window left" })
 hl.bind(mod .. " + CTRL + SHIFT + right", hl.dsp.window.swap({ direction = "r" }), { description = "Swap window right" })
@@ -625,12 +749,12 @@ hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
 -- "preferred,auto" re-reads the panel instead of repeating the mode above, so
 -- this keeps working whatever the monitor section ends up saying.
 hl.bind("switch:off:Lid Switch", function()
-    hl.exec_cmd("hyprctl keyword monitor eDP-1,preferred,auto,1")
+    hl.exec_cmd(scripts .. "/pypr-apply-monitors.py")
     set_wallpapers_delayed()
 end, { locked = true })
 
 hl.bind("switch:on:Lid Switch", function()
-    hl.exec_cmd("hyprctl keyword monitor eDP-1,disable")
+    hl.monitor({ output = "eDP-1", disabled = true })
 end, { locked = true })
 
 -- =========================================================================
@@ -686,6 +810,18 @@ hl.window_rule({ match = { title = "^(Rename)(.*)$" }, size = "450 200" })
 hl.window_rule({ match = { title = "^(Create New Folder)$" }, size = "450 200" })
 hl.window_rule({ match = { title = "^(Properties)$" }, size = "500 600" })
 hl.window_rule({ match = { modal = true }, float = true, center = true, rounding = 10 })
+hl.window_rule({ match = { title = "^hyprfloat:.*$" }, float = true, no_anim = true })
+hl.window_rule({ match = { title = "^hyprfloat:alttab$" }, pin = true, size = "0 0" })
 
--- HyprMod managed settings
-require("hyprland-gui")
+-- HyprMod rewrites hyprland-gui.lua with monitor pins from the current
+-- plug. Swallow every hl.monitor from it so a catch-all preferred or a
+-- named DP-* cannot 0x0 the next hotplug.
+do
+    local apply = hl.monitor
+    hl.monitor = function() end
+    local ok, err = pcall(require, "hyprland-gui")
+    hl.monitor = apply
+    if not ok then
+        io.stderr:write("hyprland-gui.lua: " .. tostring(err) .. "\n")
+    end
+end

@@ -1,7 +1,7 @@
 {
   "default": "",
   "icons": [
-    { "match": ["obsidian"], "icon": "~/Downloads/obsidian.svg", "activeColor": "#000000", "inactiveColor": "#ffffff" },
+    { "match": ["obsidian"], "icon": "icons/obsidian.svg", "tint": true },
     { "match": ["firefox", "zen", "librewolf"], "icon": "󰈹" },
     { "match": ["chromium", "chrome", "thorium"], "icon": "" },
     { "match": ["brave"], "icon": "" },

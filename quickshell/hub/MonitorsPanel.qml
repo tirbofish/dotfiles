@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import "../lib" as Lib
+import "../lib/MonitorScale.js" as MonitorScale
 
 Item {
     id: panel
@@ -37,10 +38,44 @@ Item {
         return panel.draftPositions[name] || { x: 0, y: 0 }
     }
 
+    function logicalSize(mon) {
+        var s = Number(mon && mon.scale) || 1
+        return {
+            w: Math.max(1, Number(mon && mon.width) / s),
+            h: Math.max(1, Number(mon && mon.height) / s)
+        }
+    }
+
+    function snapAxis(value, candidates, threshold) {
+        var best = value, bestDist = threshold
+        for (var i = 0; i < candidates.length; i++) {
+            var d = Math.abs(value - candidates[i])
+            if (d < bestDist) { bestDist = d; best = candidates[i] }
+        }
+        return best
+    }
+
+    function snapPosition(name, x, y) {
+        var moving = panel.monFor(name)
+        if (!moving) return { x: Math.round(x), y: Math.round(y) }
+        var size = panel.logicalSize(moving)
+        var sx = x, sy = y
+        for (var i = 0; i < panel.monitors.length; i++) {
+            var other = panel.monitors[i]
+            if (other.name === name) continue
+            var op = panel.positionOf(other.name)
+            var os = panel.logicalSize(other)
+            sx = panel.snapAxis(sx, [op.x, op.x + os.w - size.w, op.x + os.w, op.x - size.w, op.x + os.w / 2 - size.w / 2], 32)
+            sy = panel.snapAxis(sy, [op.y, op.y + os.h - size.h, op.y + os.h, op.y - size.h, op.y + os.h / 2 - size.h / 2], 32)
+        }
+        return { x: Math.round(sx), y: Math.round(sy) }
+    }
+
     function setPosition(name, x, y) {
+        var snapped = panel.snapPosition(name, x, y)
         var next = {}
         for (var key in panel.draftPositions) next[key] = panel.draftPositions[key]
-        next[name] = { x: Math.round(x), y: Math.round(y) }
+        next[name] = snapped
         panel.draftPositions = next
     }
 
@@ -52,8 +87,9 @@ Item {
         for (var i = 0; i < panel.monitors.length; i++) {
             var mon = panel.monitors[i], pos = panel.positionOf(mon.name)
             minX = Math.min(minX, pos.x); minY = Math.min(minY, pos.y)
-            maxX = Math.max(maxX, pos.x + mon.width / mon.scale)
-            maxY = Math.max(maxY, pos.y + mon.height / mon.scale)
+            var size = panel.logicalSize(mon)
+            maxX = Math.max(maxX, pos.x + size.w)
+            maxY = Math.max(maxY, pos.y + size.h)
         }
         return { minX: minX, minY: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) }
     }
@@ -109,7 +145,9 @@ Item {
 
     function syncFromCurrent() {
         if (!panel.current) return
-        panel.pickRes   = panel.current.width + "x" + panel.current.height
+        panel.pickRes   = Lib.MonitorService.hasRealMode(panel.current)
+            ? panel.current.width + "x" + panel.current.height
+            : (panel.modesOf(panel.current)[0] || "preferred")
         panel.pickHz    = String(Math.round(panel.current.refreshRate))
         panel.pickScale = panel.current.scale
         panel.edited    = false
@@ -270,8 +308,8 @@ Item {
                         readonly property var pos: panel.positionOf(modelData.name)
                         x: 10 + (pos.x - layoutCanvas.bounds.minX) * layoutCanvas.fitScale
                         y: 10 + (pos.y - layoutCanvas.bounds.minY) * layoutCanvas.fitScale
-                        width: modelData.width / modelData.scale * layoutCanvas.fitScale
-                        height: modelData.height / modelData.scale * layoutCanvas.fitScale
+                        width: panel.logicalSize(modelData).w * layoutCanvas.fitScale
+                        height: panel.logicalSize(modelData).h * layoutCanvas.fitScale
                         radius: 7
                         color: modelData.name === (panel.current ? panel.current.name : "")
                             ? Qt.rgba(panel.theme.accent.r, panel.theme.accent.g, panel.theme.accent.b, 0.42)
@@ -607,11 +645,11 @@ Item {
                 spacing: 7
 
                 Repeater {
-                    model: [1.0, 1.25, 1.33, 1.5, 2.0]
+                    model: MonitorScale.choices(panel.pickRes)
 
                     Chip {
                         required property var modelData
-                        label:  modelData + "×"
+                        label:  Number(modelData.toFixed(3)) + "×"
                         active: Math.abs(modelData - panel.pickScale) < 0.001
                         onPicked: { panel.pickScale = modelData; panel.edited = true }
                     }

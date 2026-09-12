@@ -730,6 +730,7 @@ PanelWindow {
                                             model: wsDelegate.wsWindows
                                             
                                             Item {
+                                                id: appSlot
                                                 width: 22
                                                 height: 22
 
@@ -742,6 +743,8 @@ PanelWindow {
                                                     return String(c)
                                                 }
                                                 property var appIcon: Lib.AppIcons.lookup(safeClass)
+                                                property bool iconTinted: !!appIcon.tint
+                                                property bool iconFailed: customAppIcon.status === Image.Error
                                                 property color appColor: (wsDelegate.isActive ? appIcon.activeColor : appIcon.inactiveColor) || (wsDelegate.isActive ? "#2b3033" :
                                                                      (modelData.urgent ? flashColor.val :
                                                                      (wsHover.hovered ? (taskbar.isDarkMode ? "#f2f2f2" : "#2d353b") :
@@ -760,8 +763,8 @@ PanelWindow {
                                                 
                                                 Text {
                                                     anchors.centerIn: parent
-                                                    visible: parent.appIcon.source === ""
-                                                    text: parent.appIcon.glyph
+                                                    visible: parent.appIcon.source === "" || parent.iconFailed
+                                                    text: parent.appIcon.glyph || ""
                                                     font.family: theme.iconFont
                                                     font.pixelSize: 18
                                                     lineHeight: 0.8
@@ -779,16 +782,14 @@ PanelWindow {
                                                     id: customAppIcon
                                                     anchors.centerIn: parent
                                                     width: 18; height: 18
-                                                    visible: false
+                                                    visible: parent.appIcon.source !== "" && !parent.iconFailed
                                                     source: parent.appIcon.source
                                                     sourceSize: Qt.size(36, 36)
                                                     fillMode: Image.PreserveAspectFit
-                                                }
-                                                ColorOverlay {
-                                                    anchors.fill: customAppIcon
-                                                    visible: parent.appIcon.source !== ""
-                                                    source: customAppIcon
-                                                    color: parent.appColor
+                                                    smooth: true
+                                                    layer.enabled: visible && parent.iconTinted
+                                                    layer.smooth: true
+                                                    layer.effect: ColorOverlay { color: appSlot.appColor }
                                                 }
                                             }
                                         }

@@ -3,21 +3,21 @@
 // will be completely replaced by lib/ThemeEngine.qml soon
 
 // Everforest-ish
-var bgPanel = "#020202e0"
-var bgCard  = "#020202"
-var bgItem  = "#9b919b40"
-var bgItemHover = "#9b919b70"
+var bgPanel = "#201818e0"
+var bgCard  = "#201818"
+var bgItem  = "#a5827440"
+var bgItemHover = "#a5827470"
 
-var fgMain  = "#ded0de"
-var fgMuted = "#9b919b"
-var fgOnAccent = "#020202"
+var fgMain  = "#ecbba7"
+var fgMuted = "#a58274"
+var fgOnAccent = "#201818"
 
-var accent = "#D17198"
-var accentBlue = "#C3A3BE"
-var accentRed  = "#9B4A5F"
+var accent = "#D27156"
+var accentBlue = "#E59550"
+var accentRed  = "#974B37"
 
-var weatherd="#9b919b"
-var weatherl="#C3A3BE"
+var weatherd="#a58274"
+var weatherl="#E59550"
 
 // Sizing
 var radiusOuter = 24

@@ -54,25 +54,33 @@ function M.shader_path(shader_dir)
     return shader_dir .. name
 end
 
+local function mode_is_real(mode)
+    if not mode or mode == "preferred" or mode == "highres" or mode == "highrr" then
+        return false
+    end
+    local w, h = mode:match("^(%d+)x(%d+)")
+    w, h = tonumber(w), tonumber(h)
+    return w and h and w >= 200 and h >= 200
+end
+
 function M.apply_monitors()
     local raw = read_all(home .. "/.config/quickshell/lib/monitors.json")
     if not raw then return end
-    local outputs = {}
-    for _, monitor in ipairs(hl.get_monitors()) do
-        outputs[monitor.description] = monitor.name
-    end
+    -- Match by description, not connector name. A leftover DP-3 rule applies
+    -- before EDID on the next plug and sticks at 0x0 until relogin.
     for description, block in raw:gmatch('"([^"]+)"%s*:%s*({[^{}]*"output"%s*:%s*"[^"]+"[^{}]*})') do
-        local output = outputs[description]
-        if output then
-            local spec = { output = output }
+        if description ~= "" and description ~= "knownPatterns" then
+            local spec = { output = "desc:" .. description }
             local mode = block:match('"mode"%s*:%s*"([^"]+)"')
             local position = block:match('"position"%s*:%s*"([^"]+)"')
             local scale = block:match('"scale"%s*:%s*([%d.]+)')
-            if mode then spec.mode = mode end
-            if position then spec.position = position end
-            if scale then spec.scale = tonumber(scale) end
-            if output == "eDP-1" then spec.bitdepth = 10 end
-            hl.monitor(spec)
+            if mode_is_real(mode) then
+                if mode then spec.mode = mode end
+                if position then spec.position = position end
+                if scale then spec.scale = tonumber(scale) end
+                if description:find("LQ135P1JX51", 1, true) then spec.bitdepth = 10 end
+                hl.monitor(spec)
+            end
         end
     end
 end

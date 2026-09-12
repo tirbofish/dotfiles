@@ -1,0 +1,8 @@
+[Unit]
+Description=Pyprland monitor hotplug
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/pypr
+Restart=on-failure
+RestartSec=2

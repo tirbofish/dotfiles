@@ -32,6 +32,8 @@ PanelWindow {
     Component.onCompleted: syncFromSpec()
     onSpecChanged: syncFromSpec()
     onEditingChanged: {
+        if (win.editing)
+            win.capturingKeys = false
         if (!editing) {
             dragging = false
             syncFromSpec()
@@ -45,14 +47,22 @@ PanelWindow {
     implicitHeight: win.boxH
     color: "transparent"
     exclusiveZone: -1
-    aboveWindows: win.editing
-    WlrLayershell.layer: win.editing ? WlrLayer.Overlay : (win.notesFocus ? WlrLayer.Top : WlrLayer.Bottom)
+    property bool capturingKeys: false
+    aboveWindows: win.editing || win.capturingKeys
+    WlrLayershell.layer: win.editing ? WlrLayer.Overlay : (win.capturingKeys ? WlrLayer.Top : WlrLayer.Bottom)
     WlrLayershell.namespace: "desktop-widget"
-    readonly property bool notesFocus: !win.editing && win.spec && win.spec.type === "notes"
-    focusable: win.notesFocus
-    WlrLayershell.keyboardFocus: win.notesFocus ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    readonly property bool inputFocus: !win.editing && win.spec && (win.spec.type === "notes" || win.spec.type === "todo")
+    readonly property bool notesFocus: win.inputFocus
+    focusable: win.inputFocus
+    WlrLayershell.keyboardFocus: win.inputFocus ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
     readonly property bool windowActive: contentItem.window ? contentItem.window.active : false
-    onWindowActiveChanged: if (!windowActive && body.item && body.item.clearFocus) body.item.clearFocus()
+    onWindowActiveChanged: {
+        if (win.windowActive && win.inputFocus)
+            win.capturingKeys = true
+        else
+            win.capturingKeys = false
+        if (!windowActive && body.item && body.item.clearFocus) body.item.clearFocus()
+    }
     // Keep the surface and coordinate system stable for the entire edit session.
     anchors { left: true; top: true; right: win.editing; bottom: win.editing }
     margins { left: win.editing ? 0 : win.posX; top: win.editing ? 0 : win.posY }
@@ -96,6 +106,7 @@ PanelWindow {
                 case "media": return mediaComp
                 case "stats": return statsComp
                 case "notes": return notesComp
+                case "todo": return todoComp
                 case "cava": return cavaComp
                 case "codexbar": return codexbarComp
                 default: return clockComp
@@ -252,6 +263,14 @@ PanelWindow {
             theme: win.theme
             text: (win.spec.settings && win.spec.settings.note) ? win.spec.settings.note : ""
             onNoteChanged: (t) => Lib.WidgetService.setSetting(win.outputKey, win.spec.id, "note", t)
+        }
+    }
+    Component {
+        id: todoComp
+        TodoWidget {
+            theme: win.theme
+            items: (win.spec.settings && win.spec.settings.todos) ? win.spec.settings.todos : []
+            onTodosChanged: (list) => Lib.WidgetService.setSetting(win.outputKey, win.spec.id, "todos", list)
         }
     }
     Component {

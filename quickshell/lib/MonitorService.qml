@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+import "MonitorScale.js" as MonitorScale
 
 Scope {
     id: root
@@ -70,8 +71,28 @@ Scope {
         return null
     }
 
+    function hasRealMode(m) {
+        return m && Number(m.width) >= 200 && Number(m.height) >= 200
+    }
+
+    function modeIsReal(mode) {
+        var s = String(mode || "")
+        if (!s || s === "preferred" || s === "highres" || s === "highrr") return true
+        var match = s.match(/^(\d+)x(\d+)/)
+        return !!(match && Number(match[1]) >= 200 && Number(match[2]) >= 200)
+    }
+
+    // Connector names (DP-3) rotate and, if pinned while empty, 0x0 the next
+    // hotplug. Description rules only match once EDID is present.
+    function selectorFor(monOrName) {
+        var mon = typeof monOrName === "object" ? monOrName : root.monitorFor(monOrName)
+        var desc = mon ? String(mon.description || "") : ""
+        if (desc.length) return "desc:" + desc
+        return typeof monOrName === "object" ? (monOrName && monOrName.name) : monOrName
+    }
+
     function rememberCurrent(mon) {
-        if (!mon || root.configured[root.keyFor(mon)]) return
+        if (!mon || !hasRealMode(mon) || root.configured[root.keyFor(mon)]) return
         var next = {}
         for (var key in root.configured) next[key] = root.configured[key]
         next[root.keyFor(mon)] = {
@@ -151,29 +172,7 @@ Scope {
                 for (var i = 0; i < list.length; i++) {
                     var m = list[i]
                     fresh[m.name] = m.description
-                    var key = root.keyFor(m)
-                    if (root.configured[key]) {
-                        var spec = root.configured[key]
-                        if (!root.profileMatches(m, spec)) {
-                            root._mon({ output: m.name, mode: spec.mode,
-                                position: spec.position, scale: spec.scale })
-                        }
-                        continue
-                    }
-                    if (root.stateLoaded) root.rememberCurrent(m)
-                    if (!root._primed) continue
-                    if (root._seen[m.name] === m.description) continue
-                    if (m.name === root.laptopOutput) continue
-
-                    if (root.isKnown(m.description)) {
-                        root.knownConnected(m)
-                    } else if (root.remembered[key]) {
-                        root.apply(root.remembered[key], m, false)
-                        root.toast(root._shortName(m) + " set to " + root.remembered[key])
-                    } else {
-                        root.pending = m
-                        root.guestConnected(m)
-                    }
+                    // Pyprland owns hotplug layouts; this query only updates the UI.
                 }
                 for (var name in root._seen) {
                     if (fresh[name] === undefined) {
@@ -212,10 +211,16 @@ Scope {
     }
 
     // Hyprland applies its own monitor rules first; reading too early reports
-    // the pre-rule mode
+    // the pre-rule mode (often 0x0 / 20x32).
     Timer {
         id: settle
-        interval: 600
+        interval: 800
+        onTriggered: root.refresh()
+    }
+
+    Timer {
+        id: edidRetry
+        interval: 400
         onTriggered: root.refresh()
     }
 
@@ -234,31 +239,47 @@ Scope {
         return d.length > 28 ? d.substring(0, 28) : d
     }
 
+    function _luaStr(s) {
+        return String(s ?? "").replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+    }
+
     function _mon(spec) {
-        var parts = ['output = "' + spec.output + '"']
-        if (spec.mode      !== undefined) parts.push('mode = "' + spec.mode + '"')
-        if (spec.position  !== undefined) parts.push('position = "' + spec.position + '"')
+        if (spec.scale !== undefined) {
+            var monitor = root.monitors.find(function(m) { return root.selectorFor(m) === spec.output || m.name === spec.output })
+            spec.scale = MonitorScale.nearest(spec.mode || (monitor ? monitor.width + "x" + monitor.height : ""), spec.scale)
+        }
+        var parts = ['output = "' + root._luaStr(spec.output) + '"']
+        if (spec.mode      !== undefined) parts.push('mode = "' + root._luaStr(spec.mode) + '"')
+        if (spec.position  !== undefined) parts.push('position = "' + root._luaStr(spec.position) + '"')
         if (spec.scale     !== undefined) parts.push("scale = " + spec.scale)
-        if (spec.mirror    !== undefined) parts.push('mirror = "' + spec.mirror + '"')
+        if (spec.mirror    !== undefined) parts.push('mirror = "' + root._luaStr(spec.mirror) + '"')
         if (spec.disabled  !== undefined) parts.push("disabled = " + (spec.disabled ? "true" : "false"))
         Quickshell.execDetached(["hyprctl", "eval", "hl.monitor({ " + parts.join(", ") + " })"])
         root.monitorApplied()
     }
 
     function _on(output) {
+        var mon = root.monitorFor(output)
+        if (mon && output !== root.laptopOutput && !root.hasRealMode(mon))
+            return
         var spec = root.configuredForOutput(output)
+        var mode = spec?.mode ?? "preferred"
+        if (!root.modeIsReal(mode)) mode = "preferred"
         _mon({
-            output: output,
-            mode: spec?.mode ?? "preferred",
+            output: root.selectorFor(output),
+            mode: mode,
             position: spec?.position ?? "auto",
             scale: spec?.scale ?? 1,
             disabled: false
         })
     }
-    function _off(output) { _mon({ output: output, disabled: true }) }
+    function _off(output) { _mon({ output: root.selectorFor(output), disabled: true }) }
 
     function configure(spec, mon) {
-        if (!mon) return
+        if (!mon || !root.modeIsReal(spec && spec.mode)) return
+        spec.scale = MonitorScale.nearest(spec.mode, spec.scale)
+        Quickshell.execDetached(["python3", Quickshell.env("HOME") + "/.config/hypr/scripts/save-kanshi.py",
+            mon.name === root.laptopOutput ? mon.name : root.keyFor(mon), JSON.stringify(spec)])
         var next = {}
         for (var key in root.configured) next[key] = root.configured[key]
         next[root.keyFor(mon)] = {
@@ -269,7 +290,12 @@ Scope {
         }
         root.configured = next
         root.save()
-        root._mon(spec)
+        root._mon({
+            output: root.selectorFor(mon),
+            mode: spec.mode,
+            position: spec.position,
+            scale: spec.scale
+        })
     }
 
     function _snapshot() {
@@ -282,7 +308,7 @@ Scope {
 
     // layout: extend | duplicate | laptop | external
     function apply(layout, mon, needsConfirm) {
-        if (!mon) return
+        if (!mon || !root.hasRealMode(mon)) return
         if (needsConfirm === undefined) needsConfirm = true
         root.revertSnapshot = root._snapshot()
 
@@ -297,9 +323,11 @@ Scope {
             // while the monitor has it switched off
             _on(root.promptOutput)
             var mirrorSpec = root.configuredForOutput(name)
+            var mirrorMode = mirrorSpec?.mode ?? "preferred"
+            if (!root.modeIsReal(mirrorMode)) mirrorMode = "preferred"
             _mon({
-                output: name,
-                mode: mirrorSpec?.mode ?? "preferred",
+                output: root.selectorFor(mon),
+                mode: mirrorMode,
                 position: mirrorSpec?.position ?? "auto",
                 scale: mirrorSpec?.scale ?? 1,
                 mirror: root.promptOutput

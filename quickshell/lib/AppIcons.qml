@@ -33,12 +33,15 @@ Scope {
             if ((rule.match || []).some(name => cls.includes(String(name).toLowerCase()))) {
                 const icon = String(rule.icon || fallback)
                 const isFile = icon.includes("/") || icon.startsWith("file:") || icon.startsWith("image:")
+                const activeColor = String(rule.activeColor || "")
+                const inactiveColor = String(rule.inactiveColor || "")
                 return isFile
-                    ? { glyph: "", source: source(icon), activeColor: String(rule.activeColor || ""), inactiveColor: String(rule.inactiveColor || "") }
-                    : { glyph: icon, source: "", activeColor: "", inactiveColor: "" }
+                    ? { glyph: "", source: source(icon), activeColor, inactiveColor,
+                        tint: !!(rule.tint || activeColor || inactiveColor) }
+                    : { glyph: icon, source: "", activeColor: "", inactiveColor: "", tint: false }
             }
         }
-        return { glyph: fallback, source: "", activeColor: "", inactiveColor: "" }
+        return { glyph: fallback, source: "", activeColor: "", inactiveColor: "", tint: false }
     }
 
     FileView {

@@ -81,6 +81,9 @@
 # Runtime layout and this-machine display serials
 /quickshell/desktop/widgets.json
 /quickshell/lib/monitors.json
+/hypr/monitors.conf
+/hypr/monitors.lua
+/quickshell/lib/test-*.cjs
 
 # Last-screenshot filename and other per-machine app state
 /swappy/config
@@ -89,3 +92,5 @@
 # User units with absolute home paths, venvs, and tokens
 /systemd/user/hermes-gateway.service
 /systemd/user/opencodex-proxy.service
+/systemd/user/a1-hunter.service
+/systemd/user/cpu-starvation-guard.service
