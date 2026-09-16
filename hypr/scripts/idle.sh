@@ -80,8 +80,8 @@ apply() {
     cat <<EOF
 general {
     lock_cmd = $lock_script
-    before_sleep_cmd = loginctl lock-session
-    after_sleep_cmd = hyprctl dispatch 'hl.dsp.dpms({action = "on"})'
+    before_sleep_cmd = $HOME/.config/hypr/scripts/pre-sleep.sh
+    after_sleep_cmd = $HOME/.config/hypr/scripts/post-sleep.sh
     ignore_dbus_inhibit = false
     ignore_systemd_inhibit = false
 }

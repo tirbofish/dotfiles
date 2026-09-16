@@ -29,6 +29,18 @@ Item {
     property bool open: false
     readonly property int trayCount: (SystemTray.items?.values ?? []).length
     readonly property int updateCount: Number(updates.value) || 0
+    readonly property var progressItems: progress.value?.items || []
+    readonly property var progressState: progressItems.length ? progressItems[0]
+        : ({ status: "idle", label: "", current: null, total: null })
+
+    function progressTooltip() {
+        const s = progressState
+        if (s.status === "idle") return "Progress tracker (idle)"
+        const value = s.current === null ? s.status
+            : (s.total ? s.current + "/" + s.total + " (" + Math.round(100 * s.current / s.total) + "%)" : String(s.current))
+        return (s.label || "Progress") + ": " + value
+            + (progressItems.length > 1 ? " · +" + (progressItems.length - 1) + " more" : "")
+    }
 
     function openTrayMenu(item, menuAnchor) {
         if (!item)
@@ -58,6 +70,16 @@ Item {
             echo "$n" | tee /tmp/qs_updates_count
         `]
         parse: function(o) { return String(o ?? "").trim() }
+    }
+
+    Lib.CommandPoll {
+        id: progress
+        interval: 1000
+        command: [Quickshell.env("HOME") + "/.local/bin/progress", "show"]
+        parse: function(output) {
+            try { return JSON.parse(String(output || "{}")) }
+            catch (e) { return { items: [] } }
+        }
     }
 
     Timer {
@@ -278,6 +300,74 @@ Item {
                         : (root.updateCount > 0
                             ? (root.updateCount + " update" + (root.updateCount === 1 ? "" : "s"))
                             : "System up to date")
+                }
+
+                Item {
+                    id: progressIcon
+                    width: 32
+                    height: 32
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: width / 2
+                        color: root.hover
+                        opacity: progressPress.pressed ? 1.0 : (progressHover.hovered ? 0.8 : 0.0)
+                    }
+
+                    Canvas {
+                        id: progressRing
+                        anchors.centerIn: parent
+                        width: 20
+                        height: 20
+                        readonly property var state: root.progressState
+                        onStateChanged: requestPaint()
+                        onPaint: {
+                            const ctx = getContext("2d")
+                            ctx.reset()
+                            const fraction = state.total ? Math.max(0, Math.min(1, Number(state.current) / Number(state.total))) : 0
+                            ctx.beginPath()
+                            ctx.arc(10, 10, 8, 0, Math.PI * 2)
+                            ctx.strokeStyle = root.textSecondary
+                            ctx.globalAlpha = 0.35
+                            ctx.lineWidth = 2
+                            ctx.stroke()
+                            ctx.globalAlpha = 1
+                            if (fraction > 0 || state.status === "done") {
+                                ctx.beginPath()
+                                ctx.arc(10, 10, 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (state.status === "done" ? 1 : fraction))
+                                ctx.strokeStyle = state.status === "failed" ? root.critical : root.accent
+                                ctx.lineWidth = 2
+                                ctx.lineCap = "round"
+                                ctx.stroke()
+                            }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.progressState.status === "done" ? "✓" : (root.progressState.status === "failed" ? "!" : "")
+                        font.family: root.textFont
+                        font.pixelSize: 10
+                        font.weight: 800
+                        color: root.progressState.status === "failed" ? root.critical : root.accent
+                    }
+
+                    MouseArea {
+                        id: progressPress
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: (mouse) => {
+                            Quickshell.execDetached([Quickshell.env("HOME") + "/.local/bin/progress",
+                                mouse.button === Qt.RightButton ? "clear" : "edit"])
+                            root.open = false
+                        }
+                    }
+                    HoverHandler { id: progressHover }
+                    ToolTip.visible: progressHover.hovered
+                    ToolTip.delay: 250
+                    ToolTip.text: root.progressTooltip()
                 }
 
                 Repeater {

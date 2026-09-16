@@ -52,7 +52,7 @@ if root.is_dir():
             "name": meta.get("name") or d.name,
             "mode": meta.get("mode") or "dark",
             "wallpaper": path("wallpaper"),
-            "kittyStartup": path("kittyStartup"),
+            "fastfetchStartup": path("fastfetchStartup") or path("kittyStartup"),
             "active": d.name == current,
         })
 print(json.dumps(packs))
@@ -89,14 +89,16 @@ apply() {
   local man="$pack/theme.json"
   [[ -f "$man" ]] || { echo "unknown theme: $id" >&2; exit 1; }
 
-  local mode wallpaper kitty_img
+  local mode wallpaper ff_img
   mode="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("mode") or "dark")' "$man")"
   wallpaper="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("wallpaper") or "")' "$man")"
-  kitty_img="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("kittyStartup") or "")' "$man")"
+  ff_img="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("fastfetchStartup") or d.get("kittyStartup") or "")' "$man")"
 
-  local wall_path kitty_path
+  local wall_path ff_path
   wall_path="$(resolve "$pack" "$wallpaper" || true)"
-  kitty_path="$(resolve "$pack" "$kitty_img" || true)"
+  ff_path="$(resolve "$pack" "$ff_img" || true)"
+
+  printf '%s' "$id" > "$current_file"
 
   if [[ "$mode" == "light" || "$mode" == "dark" ]]; then
     "$mode_script" "$mode" --quiet --no-wallpaper >/dev/null 2>&1 || true
@@ -109,8 +111,7 @@ apply() {
   fi
 
   write_kitty
-  write_fastfetch "$kitty_path"
-  printf '%s' "$id" > "$current_file"
+  write_fastfetch "$ff_path"
   echo "$id"
 }
 

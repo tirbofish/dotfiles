@@ -394,6 +394,40 @@ Item {
                     onToggled: (v)=>{ Lib.InputService.touchpadDisableWhileTyping=v; Lib.InputService.save() } }
             }
 
+            SCard {
+                visible: root.showCat("clipboard")
+                label: "Clipboard history"
+                Layout.columnSpan: 2; Layout.fillWidth: true
+
+                Text {
+                    text: "Win+V is a queue of the last N copies. Older items are dropped. A reboot wipes the whole history."
+                    font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 12
+                    color: root.theme ? root.theme.textSecondary : "#888"; opacity: 0.8
+                    Layout.fillWidth: true; wrapMode: Text.WordWrap
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    SLabel { text: "Max entries" }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: String(Lib.Configuration.clipboardMaxItems)
+                        font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 15
+                        color: root.theme ? root.theme.textSecondary : "#888"
+                    }
+                }
+                SSlider { from: 1; to: 200; stepSize: 1; value: Lib.Configuration.clipboardMaxItems
+                    onMoved: (v) => {
+                        Lib.Configuration.clipboardMaxItems = Math.round(v)
+                        Lib.Configuration.applyClipboard()
+                    } }
+                SDivider {}
+                RowLayout {
+                    Layout.fillWidth: true
+                    Item { Layout.fillWidth: true }
+                    SBtn { label: "Clear history now"; onTriggered: Lib.Configuration.wipeClipboard() }
+                }
+            }
+
             //  5. SCREEN BORDERS
             SCard {
                 visible: root.showCat("borders")
@@ -508,6 +542,47 @@ Item {
                     color: root.theme ? root.theme.accentRed : "#e67e80"
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
                 }
+                SDivider {}
+                RowLayout {
+                    Layout.fillWidth: true
+                    SLabel { text: "Top bar visualizer" }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: Math.round(Lib.Configuration.barCavaOpacity * 100) + "%"
+                        font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 14
+                        color: root.theme ? root.theme.textSecondary : "#888"
+                    }
+                }
+                SSlider {
+                    from: 0; to: 1; stepSize: 0.05
+                    value: Lib.Configuration.barCavaOpacity
+                    onMoved: (v) => {
+                        Lib.Configuration.barCavaOpacity = v
+                        Lib.Configuration.save()
+                    }
+                }
+                SDivider {}
+                RowLayout {
+                    Layout.fillWidth: true; spacing: 8
+                    SBtn {
+                        label: "Quick reload"
+                        accent: true
+                        onTriggered: {
+                            Lib.ThemePackService.refresh()
+                            Lib.Configuration.quickReload()
+                            root.toastRequested("Reloaded")
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                    Text {
+                        text: "Writes every setting, reloads from disk, then hot-reloads the shell."
+                        font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 11
+                        color: root.theme ? root.theme.textSecondary : "#888"
+                        opacity: 0.75
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                }
             }
 
             SCard {
@@ -584,7 +659,7 @@ Item {
                 Layout.columnSpan: 2; Layout.fillWidth: true
 
                 Text {
-                    text: "Layouts are saved per set of connected displays. Plug in a monitor, place widgets, and that arrangement is restored the next time those screens are together."
+                    text: "Each display keeps its own widgets. The laptop layout stays on the laptop; an external gets a separate set you place on that screen."
                     font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 12
                     color: root.theme ? root.theme.textSecondary : "#888"; opacity: 0.8
                     Layout.fillWidth: true; wrapMode: Text.WordWrap

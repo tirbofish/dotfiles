@@ -94,3 +94,5 @@
 /systemd/user/opencodex-proxy.service
 /systemd/user/a1-hunter.service
 /systemd/user/cpu-starvation-guard.service
+/systemd/user/pdcli.service
+/systemd/user/rclone-zimaos.service

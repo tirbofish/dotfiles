@@ -96,11 +96,7 @@ Item {
                     anchors.top: root.centerBars ? undefined : parent.top
                     anchors.verticalCenter: root.centerBars ? parent.verticalCenter : undefined
                     radius: width / 2
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.52) }
-                        GradientStop { position: 0.55; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22) }
-                        GradientStop { position: 1.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.03) }
-                    }
+                    color: root.accent
                 }
             }
         }

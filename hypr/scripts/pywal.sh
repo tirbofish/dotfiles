@@ -44,7 +44,10 @@ print('#' + ''.join(f'{round(a[i]*(1-t)+b[i]*t):02x}' for i in range(3)))
 card_fill="${card}ee"
 
 settings="$HOME/.config/quickshell/lib/usersettings.json"
-if [[ -f "$settings" ]]; then
+theme_id="$(cat "$HOME/.local/state/theme/current_theme" 2>/dev/null || true)"
+theme_settings="$HOME/.config/themes/$theme_id/settings.json"
+for settings in "$settings" "$theme_settings"; do
+  [[ -f "$settings" ]] || continue
   jq --arg bg "$background" --arg fg "$foreground" --arg accent "$accent" \
      --arg secondary "$secondary" --arg danger "$danger" '
     .useCustomColors = true |
@@ -60,7 +63,7 @@ if [[ -f "$settings" ]]; then
     .powerMenuCassiniLight = $accent
   ' "$settings" > "$settings.tmp"
   mv "$settings.tmp" "$settings"
-fi
+done
 
 mkdir -p "$HOME/.config/hypremoji"
 cat > "$HOME/.config/hypremoji/style.css" <<EOF

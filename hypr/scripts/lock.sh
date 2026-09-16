@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # Lock with hyprlock, then run Biopass after lock_buffer seconds for
 # var_timeout seconds. Further password keystrokes start another window.
+# --no-biopass: lock only (used before suspend). If hyprlock is already
+# running, just disarm Biopass and exit.
 set -euo pipefail
-
-if pidof hyprlock >/dev/null 2>&1; then
-  exit 0
-fi
 
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/hyprlock-biopass.conf"
 RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
@@ -14,7 +12,53 @@ TRIGGER="$RUNTIME/hyprlock-biopass.trigger"
 DONE="$RUNTIME/hyprlock-biopass.done"
 STATUS="$RUNTIME/hyprlock-biopass.status"
 LOCKDIR="$RUNTIME/hyprlock-biopass.lock"
+SKIP="$RUNTIME/hyprlock-skip-biopass"
 HELPER="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/hyprlock-biopass.sh"
+
+no_biopass=0
+lid_open=0
+hyprlock_args=()
+for arg in "$@"; do
+  case "$arg" in
+    --no-biopass) no_biopass=1 ;;
+    --lid-open) lid_open=1 ;;
+    *) hyprlock_args+=("$arg") ;;
+  esac
+done
+[[ -f "$SKIP" ]] && no_biopass=1
+rm -f "$SKIP"
+
+lid_closed() {
+  grep -q closed /proc/acpi/button/lid/*/state 2>/dev/null
+}
+
+stop_biopass_procs() {
+  rm -f "$ARMED" "$TRIGGER"
+  pkill -f '/hyprlock-biopass-auth( |$)' 2>/dev/null || true
+  pkill -f '/hyprlock-biopass\.sh window' 2>/dev/null || true
+  rmdir "$LOCKDIR" 2>/dev/null || true
+}
+
+if (( lid_open )); then
+  pidof hyprlock >/dev/null 2>&1 || exit 0
+  lid_closed && exit 0
+  [[ -f "$DONE" ]] && exit 0
+  : >"$ARMED"
+  rm -f "$TRIGGER"
+  "$HELPER" window >/dev/null 2>&1 &
+  exit 0
+fi
+
+if pidof hyprlock >/dev/null 2>&1; then
+  if (( no_biopass )); then
+    stop_biopass_procs
+  fi
+  exit 0
+fi
+
+if (( no_biopass )) || lid_closed; then
+  no_biopass=1
+fi
 
 read_conf() {
   local key="$1" default="$2" value=""
@@ -51,9 +95,8 @@ trap cleanup EXIT INT TERM
 
 rm -f "$TRIGGER" "$DONE" "$STATUS"
 : >"$STATUS"
-: >"$ARMED"
 
-hyprlock "$@" &
+hyprlock "${hyprlock_args[@]}" &
 hyprlock_pid=$!
 
 stop_biopass() {
@@ -76,23 +119,36 @@ wait_until_hyprlock() {
   return 1
 }
 
+wait_for_trigger() {
+  while pidof hyprlock >/dev/null 2>&1 && [[ ! -f "$TRIGGER" && ! -f "$DONE" && -f "$ARMED" ]]; do
+    if command -v inotifywait >/dev/null 2>&1; then
+      inotifywait -q -t 5 -e create,close_write,moved_to "$RUNTIME" >/dev/null 2>&1 || true
+    else
+      sleep 1
+    fi
+  done
+}
+
 biopass_loop() {
   wait_until_hyprlock || return 0
   sleep "$buffer_s"
+  lid_closed && return 0
   while pidof hyprlock >/dev/null 2>&1; do
     [[ -f "$DONE" || ! -f "$ARMED" ]] && break
+    lid_closed && break
     "$HELPER" window
     [[ -f "$DONE" || ! -f "$ARMED" ]] && break
     pidof hyprlock >/dev/null 2>&1 || break
     rm -f "$TRIGGER"
-    while pidof hyprlock >/dev/null 2>&1 && [[ ! -f "$TRIGGER" && ! -f "$DONE" && -f "$ARMED" ]]; do
-      sleep 0.05
-    done
+    wait_for_trigger
   done
 }
 
-biopass_loop &
-waiter_pid=$!
+if (( ! no_biopass )); then
+  : >"$ARMED"
+  biopass_loop &
+  waiter_pid=$!
+fi
 
 wait "$hyprlock_pid"
 stop_biopass

@@ -3,8 +3,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Desktop widgets. Layouts are keyed by the set of connected displays so
-// laptop-only and laptop+HDMI remember different placements independently.
+// Desktop widgets. Each physical display owns its own list. Plugging in
+// an external does not copy or fork the laptop set.
 Scope {
     id: root
 
@@ -16,7 +16,7 @@ Scope {
     property bool widgetDragging: false
     property bool pickerOpen: false
     property string selectedId: ""
-    property var scenes: ({})
+    property var outputs: ({})
     property int stamp: 0
 
     readonly property var catalog: [
@@ -28,10 +28,11 @@ Scope {
         { type: "notes",    label: "Notes",        w: 280, h: 180 },
         { type: "todo",     label: "Todo",         w: 280, h: 240 },
         { type: "cava",     label: "Visualizer",   w: 320, h: 88  },
-        { type: "codexbar", label: "CodexBar",     w: 280, h: 176 }
+        { type: "codexbar", label: "CodexBar",     w: 280, h: 176 },
+        { type: "progress", label: "Progress",     w: 380, h: 140 }
     ]
 
-    readonly property string sceneId: {
+    function connectedKeys() {
         var keys = []
         var mons = MonitorService.monitors
         for (var i = 0; i < mons.length; i++) {
@@ -39,8 +40,7 @@ Scope {
             if (k && keys.indexOf(k) === -1)
                 keys.push(k)
         }
-        keys.sort()
-        return keys.join("||")
+        return keys
     }
 
     function catalogEntry(type) {
@@ -58,13 +58,13 @@ Scope {
     }
 
     function widgetsOn(outputKey) {
-        var scene = root.scenes[root.sceneId]
-        if (!scene || !outputKey) return []
-        if (scene[outputKey]) return scene[outputKey]
+        if (!outputKey) return []
+        if (root.outputs[outputKey]) return root.outputs[outputKey]
         var mon = MonitorService.monitorFor(outputKey)
         if (mon) {
             var k = MonitorService.keyFor(mon)
-            if (scene[k]) return scene[k]
+            if (k && root.outputs[k]) return root.outputs[k]
+            if (mon.name && root.outputs[mon.name]) return root.outputs[mon.name]
         }
         return []
     }
@@ -92,57 +92,42 @@ Scope {
         try { return JSON.parse(JSON.stringify(obj)) } catch (e) { return obj }
     }
 
-    function _latestFor(outputKey) {
-        var best = null
-        var bestParts = -1
-        for (var sid in root.scenes) {
-            var scene = root.scenes[sid]
-            if (!scene || !scene[outputKey] || !scene[outputKey].length) continue
-            var parts = String(sid).split("||").length
-            if (best === null || parts < bestParts || (parts === bestParts && sid === outputKey)) {
-                best = scene[outputKey]
-                bestParts = parts
+    function _migrateScenes(scenes) {
+        var out = {}
+        for (var sid in scenes) {
+            var scene = scenes[sid]
+            if (!scene) continue
+            for (var key in scene) {
+                if (!scene[key] || !scene[key].length) continue
+                if (!out[key] || !out[key].length || String(sid) === key)
+                    out[key] = root._clone(scene[key])
             }
         }
-        return best ? root._clone(best) : []
+        return out
     }
 
-    function ensureScene() {
-        var id = root.sceneId
-        if (!id) return
-        if (root.scenes[id]) return
-        var next = root._clone(root.scenes)
-        var seeded = {}
-        var mons = MonitorService.monitors
-        for (var i = 0; i < mons.length; i++) {
-            var k = MonitorService.keyFor(mons[i])
-            if (k) seeded[k] = root._latestFor(k)
+    function ensureOutputs() {
+        var keys = root.connectedKeys()
+        if (!keys.length) return
+        var next = root._clone(root.outputs)
+        var changed = false
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i]
+            if (next[k]) continue
+            next[k] = []
+            changed = true
         }
-        if (Object.keys(root.scenes).length === 0 && mons.length) {
-            var first = MonitorService.keyFor(mons[0])
-            if (first && (!seeded[first] || !seeded[first].length)) {
-                seeded[first] = [{
-                    id: "w_default_clock",
-                    type: "clock",
-                    x: 48, y: 64, w: 280, h: 168,
-                    settings: {}
-                }]
-            }
-        }
-        next[id] = seeded
-        root.scenes = next
+        if (!changed) return
+        root.outputs = next
         root.stamp++
         root.save()
     }
 
     function _replaceList(outputKey, list, bump) {
-        var id = root.sceneId
-        if (!id || !outputKey) return
-        var next = root._clone(root.scenes)
-        var scene = next[id] || {}
-        scene[outputKey] = list
-        next[id] = scene
-        root.scenes = next
+        if (!outputKey) return
+        var next = root._clone(root.outputs)
+        next[outputKey] = list
+        root.outputs = next
         if (bump) root.stamp++
         root.save()
     }
@@ -211,7 +196,7 @@ Scope {
 
     function save() { writeTimer.restart() }
 
-    // Our own writes bounce back through FileView.onLoaded. Reloading scenes
+    // Our own writes bounce back through FileView.onLoaded. Reloading
     // recreates every widget and drops notes/todo keyboard focus after the
     // save debounce, so ignore that echo.
     property bool suppressLoad: false
@@ -230,7 +215,7 @@ Scope {
 
     function _flush() {
         root.suppressLoad = true
-        configFile.setText(JSON.stringify({ scenes: root.scenes }, null, 2) + "\n")
+        configFile.setText(JSON.stringify({ outputs: root.outputs }, null, 2) + "\n")
         unsuppressLoad.restart()
     }
 
@@ -239,16 +224,15 @@ Scope {
             var raw = configFile.text()
             if (!raw || raw.length === 0) return
             var d = JSON.parse(raw)
-            if (d && d.scenes && typeof d.scenes === "object")
-                root.scenes = d.scenes
+            if (d && d.outputs && typeof d.outputs === "object")
+                root.outputs = d.outputs
+            else if (d && d.scenes && typeof d.scenes === "object") {
+                root.outputs = root._migrateScenes(d.scenes)
+                root.save()
+            }
         } catch (e) {
             console.warn("[WidgetService] load failed:", e)
         }
-    }
-
-    onSceneIdChanged: {
-        if (root.ready) root.ensureScene()
-        root.stamp++
     }
 
     FileView {
@@ -261,24 +245,24 @@ Scope {
             root.load()
             var first = !root.ready
             root.ready = true
-            root.ensureScene()
+            root.ensureOutputs()
             if (first)
                 lateBind.restart()
         }
-        onLoadFailed: { root.ready = true; root.ensureScene(); lateBind.restart() }
+        onLoadFailed: { root.ready = true; root.ensureOutputs(); lateBind.restart() }
     }
 
     Timer {
         id: lateBind
         interval: 500
-        onTriggered: { root.ensureScene(); root.stamp++ }
+        onTriggered: { root.ensureOutputs(); root.stamp++ }
     }
 
     Connections {
         target: MonitorService
-        function onMonitorApplied() { root.ensureScene(); root.stamp++ }
-        function onKnownConnected(mon) { root.ensureScene(); root.stamp++ }
-        function onGuestConnected(mon) { root.ensureScene(); root.stamp++ }
+        function onMonitorApplied() { root.ensureOutputs(); root.stamp++ }
+        function onKnownConnected(mon) { root.ensureOutputs(); root.stamp++ }
+        function onGuestConnected(mon) { root.ensureOutputs(); root.stamp++ }
         function onMonitorGone(name) { root.stamp++ }
     }
 }

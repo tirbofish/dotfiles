@@ -65,3 +65,6 @@ while IFS= read -r name; do
     })" >/dev/null || true
   fi
 done < <(jq -r '.mice[]?.name // empty' <<<"$devices")
+
+# hyprctl eval is wiped by reload; re-apply lid-gated touchscreen after devices exist.
+"${HOME}/.config/hypr/scripts/lid-touchscreen.sh" >/dev/null || true

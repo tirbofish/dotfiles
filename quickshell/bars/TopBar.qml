@@ -531,6 +531,7 @@ PanelWindow {
                         backdrop: true
                         requestedBarCount: Math.max(12, Math.min(64, Math.round(cavaHost.width / 24)))
                         accent: pal.accent
+                        opacity: Lib.Configuration.barCavaOpacity
                         layer.enabled: true
                         layer.smooth: true
                         layer.effect: OpacityMask { maskSource: cavaEdgeMask }

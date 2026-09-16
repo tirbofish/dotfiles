@@ -109,6 +109,7 @@ PanelWindow {
                 case "todo": return todoComp
                 case "cava": return cavaComp
                 case "codexbar": return codexbarComp
+                case "progress": return progressComp
                 default: return clockComp
                 }
             }
@@ -280,5 +281,9 @@ PanelWindow {
     Component {
         id: codexbarComp
         CodexBarWidget { theme: win.theme }
+    }
+    Component {
+        id: progressComp
+        ProgressWidget { theme: win.theme }
     }
 }

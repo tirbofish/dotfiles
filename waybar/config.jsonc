@@ -15,6 +15,7 @@
     "battery",
     "clock",
     "custom/power",
+    "tray",
   ],
 
   "hyprland/workspaces": {

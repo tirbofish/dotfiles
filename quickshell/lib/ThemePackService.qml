@@ -22,6 +22,7 @@ Scope {
 
     function apply(id) {
         if (!id) return
+        Configuration.switchTheme(String(id))
         applyProc.command = ["bash", root.script, "apply", String(id)]
         applyProc.running = false
         applyProc.running = true

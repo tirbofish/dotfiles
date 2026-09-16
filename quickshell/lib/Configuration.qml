@@ -73,8 +73,37 @@ Scope {
     // Theme packs (~/.config/themes/<id>)
     property string currentTheme: ""
 
+    // Top-bar hanging cava. 1 = current baked-in look.
+    property real barCavaOpacity: 1.0
+
     // Shaders
     property string currentShader: "none"
+
+    // Clipboard history (cliphist). Queue of at most N items; wiped on reboot.
+    property int clipboardMaxItems: 20
+    readonly property string clipboardScript:
+        (Quickshell.env("HOME") || "") + "/.config/hypr/scripts/clipboard-history.sh"
+
+    function clampClipboard() {
+        if (root.clipboardMaxItems < 1) root.clipboardMaxItems = 1
+        if (root.clipboardMaxItems > 200) root.clipboardMaxItems = 200
+    }
+
+    Timer {
+        id: clipboardApplyTimer
+        interval: 400
+        onTriggered: Quickshell.execDetached(["bash", root.clipboardScript, "apply"])
+    }
+
+    function applyClipboard() {
+        root.clampClipboard()
+        root.save()
+        clipboardApplyTimer.restart()
+    }
+
+    function wipeClipboard() {
+        Quickshell.execDetached(["bash", root.clipboardScript, "wipe"])
+    }
 
     // Idle / sleep (minutes). 0 = never.
     property int idleLockMin: 3
@@ -193,7 +222,42 @@ Scope {
         return path
     }
 
-    // Persistence
+    // Persistence — every user-facing setting goes through this list.
+    readonly property var persistKeys: [
+        "barStyle", "barForceWorkspaceMode", "barShowBattery", "barShowTray",
+        "barHeight", "iconSize", "barCavaOpacity",
+        "showScreenBorders", "desktopMode", "wallpaperDir",
+        "maxEvents", "useCustomColors", "customAccent", "customBg",
+        "customForeground", "customSecondary", "customDanger",
+        "currentShader",
+        "borderThickness", "borderFrameColor", "bordersEnabled",
+        "bordersForceVisible", "borderUseCustomColor",
+        "taskbarExclusiveZone", "taskbarForceDockMode", "taskbarForceWorkspaceMode",
+        "taskbarCustomBg", "taskbarCustomBgColor", "taskbarAccent",
+        "profileImageOverride",
+        "powerMenuStyle",
+        "powerMenuLifeDark", "powerMenuLifeLight",
+        "powerMenuCassiniDark", "powerMenuCassiniLight",
+        "clipboardMaxItems",
+        "idleLockMin", "idleScreenOffMin", "idleSleepMin",
+        "codexbarTray", "codexbarRefreshSec",
+        "currentTheme"
+    ]
+    readonly property var persistHomeKeys: ["wallpaperDir", "profileImageOverride"]
+    readonly property var persistColorKeys: [
+        "customAccent", "customBg", "customForeground", "customSecondary", "customDanger",
+        "borderFrameColor", "taskbarCustomBgColor", "taskbarAccent",
+        "powerMenuLifeDark", "powerMenuLifeLight",
+        "powerMenuCassiniDark", "powerMenuCassiniLight"
+    ]
+
+    readonly property string themesRoot: root.configHome + "/themes"
+    readonly property string themeSettingsPath: root.currentTheme
+        ? (root.themesRoot + "/" + root.currentTheme + "/settings.json")
+        : ""
+
+    property bool ioLock: false
+
     function save() { writeTimer.restart() }
 
     Timer {
@@ -202,96 +266,123 @@ Scope {
         onTriggered: root._flush()
     }
 
+    Timer {
+        id: unlockTimer
+        interval: 80
+        onTriggered: root.ioLock = false
+    }
+
+    function _lockIo() {
+        root.ioLock = true
+        unlockTimer.restart()
+    }
+
+    function _isColorKey(k) {
+        return root.persistColorKeys.indexOf(k) >= 0
+    }
+    function _isHomeKey(k) {
+        return root.persistHomeKeys.indexOf(k) >= 0
+    }
+
+    function snapshot(includeThemeId) {
+        var o = {}
+        var keys = root.persistKeys
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i]
+            if (!includeThemeId && k === "currentTheme") continue
+            var v = root[k]
+            if (root._isHomeKey(k)) v = root.collapseHome(v)
+            else if (root._isColorKey(k)) v = String(v)
+            o[k] = v
+        }
+        return o
+    }
+
+    function applySnapshot(d) {
+        if (d === undefined || d === null || d === "") return false
+        if (typeof d === "string") {
+            try { d = JSON.parse(d) } catch (e) {
+                console.warn("[Configuration] theme snapshot parse failed:", e)
+                return false
+            }
+        }
+        if (typeof d !== "object") return false
+        var keys = root.persistKeys
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i]
+            if (k === "currentTheme") continue
+            if (d[k] === undefined) continue
+            var v = d[k]
+            if (root._isHomeKey(k)) v = root.expandHome(v)
+            root[k] = v
+        }
+        return true
+    }
+
+    function _writeSideFiles() {
+        root.writePowerMenuColors()
+        if (root.powerMenuStyle === "life" || root.powerMenuStyle === "cassini")
+            Quickshell.execDetached(["bash", "-c",
+                "mkdir -p \"$(dirname '" + root.powerMenuStyleFile + "')\"; " +
+                "printf '%s' '" + root.powerMenuStyle + "' > '" + root.powerMenuStyleFile + "'"])
+    }
+
     function _flush() {
-        configFile.setText(JSON.stringify({
-            barStyle:                 root.barStyle,
-            barForceWorkspaceMode:    root.barForceWorkspaceMode,
-            barShowBattery:           root.barShowBattery,
-            barShowTray:              root.barShowTray,
-            barHeight:                root.barHeight,
-            iconSize:                 root.iconSize,
-            showScreenBorders:        root.showScreenBorders,
-            desktopMode:              root.desktopMode,
-            wallpaperDir:             root.collapseHome(root.wallpaperDir),
-            maxEvents:                root.maxEvents,
-            useCustomColors:          root.useCustomColors,
-            customAccent:             String(root.customAccent),
-            customBg:                 String(root.customBg),
-            customForeground:         String(root.customForeground),
-            customSecondary:          String(root.customSecondary),
-            customDanger:             String(root.customDanger),
-            currentShader:            root.currentShader,
-            borderThickness:          root.borderThickness,
-            borderFrameColor:         String(root.borderFrameColor),
-            bordersEnabled:           root.bordersEnabled,
-            bordersForceVisible:      root.bordersForceVisible,
-            borderUseCustomColor:     root.borderUseCustomColor,
-            taskbarExclusiveZone:     root.taskbarExclusiveZone,
-            taskbarForceDockMode:     root.taskbarForceDockMode,
-            taskbarForceWorkspaceMode:root.taskbarForceWorkspaceMode,
-            taskbarCustomBg:          root.taskbarCustomBg,
-            taskbarCustomBgColor:     String(root.taskbarCustomBgColor),
-            taskbarAccent:            String(root.taskbarAccent),
-            profileImageOverride:     root.collapseHome(root.profileImageOverride),
-            powerMenuLifeDark:        String(root.powerMenuLifeDark),
-            powerMenuLifeLight:       String(root.powerMenuLifeLight),
-            powerMenuCassiniDark:     String(root.powerMenuCassiniDark),
-            powerMenuCassiniLight:    String(root.powerMenuCassiniLight),
-            idleLockMin:              root.idleLockMin,
-            idleScreenOffMin:         root.idleScreenOffMin,
-            idleSleepMin:             root.idleSleepMin,
-            codexbarTray:             root.codexbarTray,
-            codexbarRefreshSec:       root.codexbarRefreshSec,
-            currentTheme:             root.currentTheme
-        }))
+        root._lockIo()
+        var full = root.snapshot(true)
+        configFile.setText(JSON.stringify(full))
+        if (root.currentTheme && themeFile.path)
+            themeFile.setText(JSON.stringify(root.snapshot(false)))
+        root._writeSideFiles()
     }
 
     function reloadFromDisk() { configFile.reload() }
+
+    function reloadAll() {
+        configFile.reload()
+        weatherConfigFile.reload()
+        pmStyleFile.reload()
+        if (root.currentTheme)
+            themeFile.reload()
+        root.clampIdle()
+        root.clampClipboard()
+        root.writePowerMenuColors()
+        idleApplyTimer.restart()
+        clipboardApplyTimer.restart()
+    }
+
+    function quickReload() {
+        writeTimer.stop()
+        root._flush()
+        root.reloadAll()
+        Quickshell.reload(false)
+    }
+
+    // Save the live settings into the old pack, then load the new pack.
+    function switchTheme(id) {
+        id = String(id || "")
+        if (!id) return
+        writeTimer.stop()
+        root._flush()
+        root.currentTheme = id
+        root._lockIo()
+        configFile.setText(JSON.stringify(root.snapshot(true)))
+        themeFile.reload()
+    }
 
     function load() {
         try {
             var raw = configFile.text()
             if (!raw || raw.length === 0) return
             var d = JSON.parse(raw)
-            if (d.barStyle                 !== undefined) root.barStyle                 = d.barStyle
-            if (d.barForceWorkspaceMode    !== undefined) root.barForceWorkspaceMode    = d.barForceWorkspaceMode
-            if (d.barShowBattery           !== undefined) root.barShowBattery           = d.barShowBattery
-            if (d.barShowTray              !== undefined) root.barShowTray              = d.barShowTray
-            if (d.barHeight                !== undefined) root.barHeight                = d.barHeight
-            if (d.iconSize                 !== undefined) root.iconSize                 = d.iconSize
-            if (d.showScreenBorders        !== undefined) root.showScreenBorders        = d.showScreenBorders
-            if (d.desktopMode              !== undefined) root.desktopMode              = d.desktopMode
-            if (d.wallpaperDir             !== undefined) root.wallpaperDir             = root.expandHome(d.wallpaperDir)
-            if (d.maxEvents                !== undefined) root.maxEvents                = d.maxEvents
-            if (d.useCustomColors          !== undefined) root.useCustomColors          = d.useCustomColors
-            if (d.customAccent             !== undefined) root.customAccent             = d.customAccent
-            if (d.customBg                 !== undefined) root.customBg                 = d.customBg
-            if (d.customForeground         !== undefined) root.customForeground         = d.customForeground
-            if (d.customSecondary          !== undefined) root.customSecondary          = d.customSecondary
-            if (d.customDanger             !== undefined) root.customDanger             = d.customDanger
-            if (d.currentShader            !== undefined) root.currentShader            = d.currentShader
-            if (d.borderThickness          !== undefined) root.borderThickness          = d.borderThickness
-            if (d.borderFrameColor         !== undefined) root.borderFrameColor         = d.borderFrameColor
-            if (d.bordersEnabled           !== undefined) root.bordersEnabled           = d.bordersEnabled
-            if (d.bordersForceVisible      !== undefined) root.bordersForceVisible      = d.bordersForceVisible
-            if (d.borderUseCustomColor     !== undefined) root.borderUseCustomColor     = d.borderUseCustomColor
-            if (d.taskbarExclusiveZone     !== undefined) root.taskbarExclusiveZone     = d.taskbarExclusiveZone
-            if (d.taskbarForceDockMode     !== undefined) root.taskbarForceDockMode     = d.taskbarForceDockMode
-            if (d.taskbarForceWorkspaceMode!== undefined) root.taskbarForceWorkspaceMode= d.taskbarForceWorkspaceMode
-            if (d.taskbarCustomBg          !== undefined) root.taskbarCustomBg          = d.taskbarCustomBg
-            if (d.taskbarCustomBgColor     !== undefined) root.taskbarCustomBgColor     = d.taskbarCustomBgColor
-            if (d.taskbarAccent            !== undefined) root.taskbarAccent            = d.taskbarAccent
-            if (d.profileImageOverride     !== undefined) root.profileImageOverride     = root.expandHome(d.profileImageOverride)
-            if (d.powerMenuLifeDark        !== undefined) root.powerMenuLifeDark        = d.powerMenuLifeDark
-            if (d.powerMenuLifeLight       !== undefined) root.powerMenuLifeLight       = d.powerMenuLifeLight
-            if (d.powerMenuCassiniDark     !== undefined) root.powerMenuCassiniDark     = d.powerMenuCassiniDark
-            if (d.powerMenuCassiniLight    !== undefined) root.powerMenuCassiniLight    = d.powerMenuCassiniLight
-            if (d.idleLockMin              !== undefined) root.idleLockMin              = d.idleLockMin
-            if (d.idleScreenOffMin         !== undefined) root.idleScreenOffMin         = d.idleScreenOffMin
-            if (d.idleSleepMin             !== undefined) root.idleSleepMin             = d.idleSleepMin
-            if (d.codexbarTray             !== undefined) root.codexbarTray             = d.codexbarTray
-            if (d.codexbarRefreshSec       !== undefined) root.codexbarRefreshSec       = d.codexbarRefreshSec
-            if (d.currentTheme             !== undefined) root.currentTheme             = d.currentTheme
+            var keys = root.persistKeys
+            for (var i = 0; i < keys.length; i++) {
+                var k = keys[i]
+                if (d[k] === undefined) continue
+                var v = d[k]
+                if (root._isHomeKey(k)) v = root.expandHome(v)
+                root[k] = v
+            }
         } catch(e) {
             console.warn("[Configuration] load failed:", e)
         }
@@ -311,9 +402,36 @@ Scope {
         path: root.configPath
         preload: true
         watchChanges: true
-        onLoaded: { root.load(); root.ready = true; root.writePowerMenuColors() }
+        onLoaded: {
+            if (root.ioLock) return
+            root.load()
+            root.ready = true
+            root.writePowerMenuColors()
+            if (root.currentTheme)
+                themeFile.reload()
+        }
         onLoadFailed: root.ready = true
-        onFileChanged: reload()
+        onFileChanged: if (!root.ioLock) reload()
+    }
+
+    FileView {
+        id: themeFile
+        path: root.themeSettingsPath
+        preload: true
+        watchChanges: true
+        onLoaded: {
+            if (!root.currentTheme) return
+            root.applySnapshot(text())
+            root._writeSideFiles()
+            root.clampIdle()
+            root.clampClipboard()
+        }
+        onLoadFailed: {
+            // First visit to this pack: keep live settings and seed the file.
+            if (root.currentTheme)
+                root._flush()
+        }
+        onFileChanged: if (!root.ioLock && root.currentTheme) reload()
     }
 
     FileView {

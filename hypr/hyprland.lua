@@ -93,7 +93,10 @@ hl.env("HYPRCURSOR_THEME", cursor_theme)
 hl.env("HYPRCURSOR_SIZE",  "32")
 hl.env("XCURSOR_THEME",    cursor_theme)
 hl.env("XCURSOR_SIZE",     "32")
-hl.env("GDK_SCALE",       "2")
+-- Do not set GDK_SCALE. The wiki laptop-only recipe (GDK_SCALE=2 plus
+-- xwayland.force_zero_scaling) pins Electron and XWayland GTK to 2x, so
+-- they stay twice as large on the 1x ultrawide. Native Wayland GTK/Qt
+-- already follow each output via wp_fractional_scale_v1.
 hl.env("GDK_BACKEND",     "wayland,x11,*")
 hl.env("CLUTTER_BACKEND", "wayland")
 hl.env("TERMINAL",        "kitty")
@@ -135,6 +138,28 @@ local function apply_monitors_delayed()
     set_wallpapers_delayed()
 end
 
+-- Surface Laptop 4: keyboard keys press the panel when the lid is shut and
+-- generate phantom touches on the remaining (usually docked) monitor.
+local function lid_closed()
+    for _, path in ipairs({
+        "/proc/acpi/button/lid/LID0/state",
+        "/proc/acpi/button/lid/LID/state",
+    }) do
+        local f = io.open(path, "r")
+        if f then
+            local s = f:read("*a") or ""
+            f:close()
+            return s:find("closed", 1, true) ~= nil
+        end
+    end
+    return false
+end
+
+local function set_touchscreen_enabled(enabled)
+    hl.config({ input = { touchdevice = { enabled = enabled } } })
+    hl.exec_cmd(scripts .. "/lid-touchscreen.sh " .. (enabled and "on" or "off"))
+end
+
 hl.on("monitor.added",   apply_monitors_delayed)
 hl.on("monitor.removed", set_wallpapers_delayed)
 
@@ -159,8 +184,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("systemctl --user start hypr-power-key-lock.service")
     hl.exec_cmd("systemctl --user start cpu-starvation-guard.service")
     hl.exec_cmd("dunst")
-    hl.exec_cmd("pgrep -ax wl-paste | grep -q -- '--type text --watch cliphist' || wl-paste --type text --watch cliphist store")
-    hl.exec_cmd("pgrep -ax wl-paste | grep -q -- '--type image --watch cliphist' || wl-paste --type image --watch cliphist store")
+    hl.exec_cmd(scripts .. "/clipboard-history.sh boot")
     hl.exec_cmd("blueman-applet")
     hl.exec_cmd("pgrep -f bt-audio-agent.py >/dev/null || " .. scripts .. "/bt-audio-agent.py")
     -- hyprpolkitagent if you have it, polkit-gnome otherwise
@@ -173,6 +197,10 @@ hl.on("hyprland.start", function()
     hl.timer(function()
         hl.exec_cmd(scripts .. "/pypr-apply-monitors.py")
     end, { timeout = 2500, type = "oneshot" })
+    -- XWayland is up by then; xpet is an override-redirect X11 pet.
+    hl.timer(function()
+        hl.exec_cmd("pgrep -x xpet >/dev/null || " .. home .. "/xpet/xpet")
+    end, { timeout = 3000, type = "oneshot" })
     -- Devices do not exist yet when this file is first parsed.
     hl.timer(apply_input_devices, { timeout = 400, type = "oneshot" })
 end)
@@ -228,16 +256,20 @@ for _, key in ipairs({
 }) do
     add_hyprlock_biopass_key(key)
 end
+local hyprlock_biopass_binds_enabled = false
 hl.timer(function()
     local armed = io.open(hyprlock_biopass_armed, "r")
     local enabled = armed ~= nil
     if armed then armed:close() end
+    if enabled == hyprlock_biopass_binds_enabled then return end
+    hyprlock_biopass_binds_enabled = enabled
     for _, bind in ipairs(hyprlock_biopass_binds) do
         bind:set_enabled(enabled)
     end
-end, { timeout = 200, type = "repeat" })
+end, { timeout = 1000, type = "repeat" })
 hl.on("input.keyboard.key", function(keycode, _, state)
     if state ~= 1 or hyprlock_biopass_skip[keycode] then return end
+    if lid_closed() then return end
     request_hyprlock_biopass()
 end)
 
@@ -365,6 +397,12 @@ hl.config({
     animations = {
         enabled = true
     },
+    cursor = {
+        -- AQ_NO_ATOMIC + Intel hw cursors flicker/vanish across mixed-scale
+        -- monitors. 1 = software cursor.
+        no_hardware_cursors = 1,
+        no_warps = true,
+    },
     dwindle = {
         preserve_split = true,
         smart_resizing = true
@@ -409,6 +447,13 @@ hl.config({
             natural_scroll       = input.touchpad.natural_scroll,
             tap_to_click         = input.touchpad.tap_to_click,
             disable_while_typing = input.touchpad.disable_while_typing
+        },
+        -- Closed lid presses the keyboard into the panel; keep the digitizer
+        -- off then, and pin remaining events to eDP-1 so they cannot leak
+        -- onto a docked display. Live lid binds update this after parse.
+        touchdevice = {
+            enabled = not lid_closed(),
+            output  = "eDP-1"
         }
     },
     xwayland = {
@@ -505,6 +550,14 @@ do
     end
 end
 
+local workspace_float = dofile(home .. "/.config/hypr/plugins/workspace-float.lua")
+workspace_float.sync()
+hl.on("window.open", workspace_float.schedule)
+hl.on("window.close", workspace_float.schedule)
+hl.on("window.move_to_workspace", workspace_float.schedule)
+hl.on("hyprland.start", workspace_float.sync)
+hl.on("config.reloaded", workspace_float.sync)
+
 hl.layer_rule({ match = { namespace = "snappy-switcher" }, blur = true, ignore_alpha = 0.01 })
 hl.layer_rule({ match = { namespace = "notifications" }, blur = true, ignore_alpha = 0.2 })
 
@@ -518,16 +571,15 @@ hl.bind(mod .. " + R", hl.dsp.global("quickshell:drawerToggle"))  -- Workspace D
 hl.bind(mod .. " + SHIFT + W", hl.dsp.global("quickshell:widgetEdit")) -- Desktop widgets
 
 -- Apps
-hl.bind(mod .. " + Q", function()
-    local window = hl.get_active_window()
-    local rules = window and window.floating and { float = true } or nil
-    hl.dispatch(hl.dsp.exec_cmd("kitty", rules))
-end)
+hl.bind(mod .. " + Q", hl.dsp.exec_cmd("kitty"))
 hl.bind(mod .. " + E", hl.dsp.exec_cmd("nautilus"))
 -- hl.bind(mod .. " + R", hl.dsp.exec_cmd(home .. "/.config/rofi/rofi_wide.sh")) -- if you prefer rofi
 hl.bind(mod .. " + B", hl.dsp.exec_cmd("firefox"))
 hl.bind(mod .. " + S", hl.dsp.exec_cmd("lens --no-decorations --sniper"))
 hl.bind(mod .. " + P", hl.dsp.exec_cmd("hyprpicker -a"))
+hl.bind(mod .. " + SHIFT + P", hl.dsp.exec_cmd("pgrep -x xpet >/dev/null && pkill -x xpet || " .. home .. "/xpet/xpet"), { description = "Toggle desktop pet" })
+hl.bind(mod .. " + SHIFT + CTRL + P", hl.dsp.exec_cmd("pkill -USR1 -x xpet"), { description = "xpet chase toggle" })
+hl.bind(mod .. " + SHIFT + ALT + P", hl.dsp.exec_cmd("pkill -USR2 -x xpet"), { description = "xpet freeze toggle" })
 hl.bind("SUPER + V", function()
     hl.exec_cmd(scripts .. "/clipboard-history.sh")
 end, { description = "Clipboard history" })
@@ -537,24 +589,33 @@ hl.bind(mod .. " + period", hl.dsp.exec_cmd(scripts .. "/emoji.sh"), { descripti
 hl.bind(mod .. " + X", hl.dsp.window.close())
 hl.bind(mod .. " + N", hl.dsp.exec_cmd(scripts .. "/minimized-windows.sh hide"), { description = "Minimize window" })
 hl.bind(mod .. " + SHIFT + N", hl.dsp.exec_cmd(scripts .. "/minimized-windows.sh menu"), { description = "Restore minimized window" })
-hl.bind(mod .. " + F", hl.dsp.window.float({ action = "toggle" }))
-hl.bind(mod .. " + SHIFT + F", hl.dsp.exec_cmd(hyprfloat .. " togglefloat"), { description = "Toggle workspace / tiled mode" })
+hl.bind(mod .. " + F", function()
+    hl.dispatch(hl.dsp.window.float({ action = "toggle" }))
+    workspace_float.schedule()
+end)
+hl.bind(mod .. " + SHIFT + F", function()
+    hl.dispatch(hl.dsp.exec_cmd(hyprfloat .. " togglefloat"))
+    workspace_float.schedule(200)
+end, { description = "Toggle workspace / tiled mode" })
 hl.bind(mod .. " + " .. alt .. " + F", function()
     hl.dispatch(hl.dsp.window.float({ action = "set" }))
     hl.dispatch(hl.dsp.window.resize({ x = 900, y = 600 }))
     hl.dispatch(hl.dsp.window.center())
+    workspace_float.schedule()
 end)
 local float_max_saved = {}
+local function reserved_sides(r)
+    r = r or {}
+    return r.left or r[1] or 0, r.top or r[2] or 0, r.right or r[3] or 0, r.bottom or r[4] or 0
+end
 local function monitor_work_area(mon)
     mon = mon or hl.get_active_monitor()
     if not mon then return nil end
     local scale = (mon.scale and mon.scale > 0) and mon.scale or 1
-    local r = mon.reserved or {}
     local gap = 3
     local border = 1
     local pad = gap + border
-    local left, right = r.left or 0, r.right or 0
-    local top, bottom = r.top or 0, r.bottom or 0
+    local left, top, right, bottom = reserved_sides(mon.reserved)
     return {
         x = (mon.x or 0) + left + pad,
         y = (mon.y or 0) + top + pad,
@@ -607,21 +668,26 @@ hl.bind(mod .. " + SHIFT + UP",   hl.dsp.layout("togglesplit"))
 hl.bind(mod .. " + G",    hl.dsp.group.toggle())
 
 hl.bind(mod .. " + L", function()
-    local w, h = 1440, 1080
-    local mon = hl.get_active_monitor()
-    if mon then
-        local scale = (mon.scale and mon.scale > 0) and mon.scale or 1
-        local r = mon.reserved or {}
-        local pad = 8
-        local max_w = mon.width / scale - (r.left or 0) - (r.right or 0) - pad
-        local max_h = mon.height / scale - (r.top or 0) - (r.bottom or 0) - pad
-        if max_w > 200 then w = math.min(w, math.floor(max_w)) end
-        if max_h > 200 then h = math.min(h, math.floor(max_h)) end
-    end
+    if not hl.get_active_window() then return end
+    local tw, th = 1440, 1080
+    local area = monitor_work_area()
     hl.dispatch(hl.dsp.window.float({ action = "set" }))
-    hl.dispatch(hl.dsp.window.resize({ exact = true, x = w, y = h }))
-    hl.dispatch(hl.dsp.window.center())
-end)
+    if area and area.w > 50 and area.h > 50 then
+        local s = math.min(1, area.w / tw, area.h / th)
+        local w = math.max(200, math.floor(tw * s))
+        local h = math.max(200, math.floor(th * s))
+        if w / h > tw / th then
+            w = math.max(200, math.floor(h * tw / th))
+        else
+            h = math.max(200, math.floor(w * th / tw))
+        end
+        place_floating(area.x + (area.w - w) / 2, area.y + (area.h - h) / 2, w, h)
+    else
+        hl.dispatch(hl.dsp.window.resize({ x = tw, y = th, relative = false }))
+        hl.dispatch(hl.dsp.window.center())
+    end
+    workspace_float.schedule()
+end, { description = "Float 1440x1080, fitted to work area" })
 
 hl.bind(mod .. " + CTRL + left",  hl.dsp.focus({ workspace = "m-1" }))
 hl.bind(mod .. " + CTRL + right", hl.dsp.focus({ workspace = "m+1" }))
@@ -749,11 +815,14 @@ hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
 -- "preferred,auto" re-reads the panel instead of repeating the mode above, so
 -- this keeps working whatever the monitor section ends up saying.
 hl.bind("switch:off:Lid Switch", function()
+    set_touchscreen_enabled(true)
     hl.exec_cmd(scripts .. "/pypr-apply-monitors.py")
     set_wallpapers_delayed()
+    hl.exec_cmd(scripts .. "/lock.sh --lid-open")
 end, { locked = true })
 
 hl.bind("switch:on:Lid Switch", function()
+    set_touchscreen_enabled(false)
     hl.monitor({ output = "eDP-1", disabled = true })
 end, { locked = true })
 
@@ -812,6 +881,21 @@ hl.window_rule({ match = { title = "^(Properties)$" }, size = "500 600" })
 hl.window_rule({ match = { modal = true }, float = true, center = true, rounding = 10 })
 hl.window_rule({ match = { title = "^hyprfloat:.*$" }, float = true, no_anim = true })
 hl.window_rule({ match = { title = "^hyprfloat:alttab$" }, pin = true, size = "0 0" })
+hl.window_rule({
+    name = "xpet",
+    match = { class = "^xpet$" },
+    float = true,
+    pin = true,
+    rounding = 0,
+    border_size = 0,
+    no_anim = true,
+    no_blur = true,
+    no_shadow = true,
+    no_dim = true,
+    no_initial_focus = true,
+    no_follow_mouse = true,
+    opacity = "1.0 1.0",
+})
 
 -- HyprMod rewrites hyprland-gui.lua with monitor pins from the current
 -- plug. Swallow every hl.monitor from it so a catch-all preferred or a

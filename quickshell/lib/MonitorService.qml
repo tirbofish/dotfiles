@@ -56,7 +56,8 @@ Scope {
 
     function monitorFor(name) {
         for (var i = 0; i < root.monitors.length; i++)
-            if (root.monitors[i].name === name) return root.monitors[i]
+            if (root.monitors[i].name === name || root.keyFor(root.monitors[i]) === name)
+                return root.monitors[i]
         return null
     }
 
