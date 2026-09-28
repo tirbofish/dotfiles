@@ -50,10 +50,16 @@ Item {
     readonly property bool bare: spec && spec.type === "cava" && !editing
     readonly property var snapped: Grid.snap(posX, posY, boxW, boxH, screenW, screenH)
 
-    Component.onCompleted: Qt.callLater(function() {
-        if (win.screenW > 0 && Lib.WidgetService.snapWidget(win.outputKey, win.spec.id, win.screenW, win.screenH))
+    // Keep the card on the grid: saved before the grid existed, or the screen
+    // (size, margins) changed. Runs once the layer knows its real size.
+    function resnap() {
+        if (win.screenW > 0 && win.screenH > 0 && !win.editing
+                && Lib.WidgetService.snapWidget(win.outputKey, win.spec.id, win.screenW, win.screenH))
             win.syncFromSpec()
-    })
+    }
+    Component.onCompleted: Qt.callLater(resnap)
+    onScreenWChanged: Qt.callLater(resnap)
+    onScreenHChanged: Qt.callLater(resnap)
     onSpecChanged: syncFromSpec()
     onEditingChanged: {
         if (!editing) {

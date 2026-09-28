@@ -10,6 +10,7 @@ import "bars" as Bars
 import "dock" as Dock
 import "desktop" as Desktop
 import "hub" as SystemHub
+import "pet" as PetMod
 
 ShellRoot {
     // Keep persisted pointer settings applied even before the settings page opens.
@@ -42,6 +43,13 @@ ShellRoot {
         function onMonitorApplied() {
             inputAfterMonitorUpdate.restart()
         }
+    }
+
+    PetMod.Pet { id: mochiPet }
+    GlobalShortcut {
+        name: "petToggle"
+        description: "Summon or hide Clawd, the desktop pet"
+        onPressed: mochiPet.summon()
     }
 
     GlobalShortcut {

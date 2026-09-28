@@ -482,6 +482,7 @@ layerrule = {
     "dim_around, power-menu",
     "noanim, desktop-widget",
     "noanim, desktop-widget-edit",
+    "noanim, desktop-pet",
 }
 })
 
@@ -581,7 +582,7 @@ hl.bind(mod .. " + E", hl.dsp.exec_cmd("nautilus"))
 hl.bind(mod .. " + B", hl.dsp.exec_cmd("firefox"))
 hl.bind(mod .. " + S", hl.dsp.exec_cmd("lens --no-decorations --sniper"))
 hl.bind(mod .. " + P", hl.dsp.exec_cmd("hyprpicker -a"))
-hl.bind(mod .. " + SHIFT + P", hl.dsp.exec_cmd("pgrep -x xpet >/dev/null && pkill -x xpet || " .. home .. "/xpet/xpet"), { description = "Toggle desktop pet" })
+hl.bind(mod .. " + SHIFT + P", hl.dsp.global("quickshell:petToggle"), { description = "Summon / hide Clawd (desktop pet)" })
 hl.bind(mod .. " + SHIFT + CTRL + P", hl.dsp.exec_cmd("pkill -USR1 -x xpet"), { description = "xpet chase toggle" })
 hl.bind(mod .. " + SHIFT + ALT + P", hl.dsp.exec_cmd("pkill -USR2 -x xpet"), { description = "xpet freeze toggle" })
 hl.bind("SUPER + V", function()

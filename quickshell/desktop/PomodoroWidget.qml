@@ -103,6 +103,17 @@ Item {
         }
     }
 
+    // Ending a session takes two taps (the first arms it for 3 s), so a stray
+    // click can't throw away an hour of focus.
+    property bool confirmCancel: false
+    Timer { id: disarm; interval: 3000; onTriggered: root.confirmCancel = false }
+    function cancel() {
+        if (!root.confirmCancel) { root.confirmCancel = true; disarm.restart(); return }
+        root.confirmCancel = false
+        stop()
+    }
+    onActiveChanged: if (!active) confirmCancel = false
+
     function stop() {
         if (Lib.WidgetService.editing) return
         root.active = false
@@ -164,12 +175,15 @@ Item {
         property string label: ""
         property string icon: ""
         property bool primary: false
+        property bool danger: false
         signal activated
         implicitWidth: Math.max(primary && label ? 88 : 34, content.implicitWidth + (label ? 26 : 18))
         implicitHeight: 34
         radius: 17
-        color: primary
-            ? (press.containsMouse ? Qt.lighter(root.phaseColor, 1.12) : root.phaseColor)
+        // Themes with a grey "danger" colour still get a red that reads as a warning.
+        readonly property color red: root.theme.accentRed.hslSaturation > 0.3 ? root.theme.accentRed : "#e5484d"
+        color: danger ? (press.containsMouse ? Qt.lighter(red, 1.1) : red)
+            : primary ? (press.containsMouse ? Qt.lighter(root.phaseColor, 1.12) : root.phaseColor)
             : (press.containsMouse ? root.theme.subtleFillHover : root.theme.subtleFill)
         Behavior on color { ColorAnimation { duration: 120 } }
         Row {
@@ -181,7 +195,7 @@ Item {
                 text: pill.icon
                 font.family: root.theme.iconFont
                 font.pixelSize: 14
-                color: pill.primary ? root.theme.textOnAccent : root.theme.textPrimary
+                color: pill.primary || pill.danger ? root.theme.textOnAccent : root.theme.textPrimary
                 anchors.verticalCenter: parent.verticalCenter
             }
             Text {
@@ -190,7 +204,7 @@ Item {
                 font.family: root.theme.textFont
                 font.pixelSize: 12
                 font.weight: 800
-                color: pill.primary ? root.theme.textOnAccent : root.theme.textPrimary
+                color: pill.primary || pill.danger ? root.theme.textOnAccent : root.theme.textPrimary
                 anchors.verticalCenter: parent.verticalCenter
             }
         }
@@ -323,7 +337,7 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     visible: ring.width > 120
-                    text: !root.active ? "tap to start" : root.running ? root.hm(root.sessionLeftMs / 60000) + " left" : "paused"
+                    text: !root.active ? "tap to start" : root.running ? root.hm(root.sessionLeftMs / 60000) + " left" : "paused · right-click ends"
                     font.family: root.theme.textFont
                     font.pixelSize: 10
                     color: root.theme.textSecondary
@@ -337,7 +351,9 @@ Item {
                 height: ring.height
                 enabled: !Lib.WidgetService.editing
                 cursorShape: Qt.PointingHandCursor
-                onClicked: root.toggle()
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                // Right-click is deliberate enough to end the session outright.
+                onClicked: (m) => m.button === Qt.RightButton ? (root.active && root.stop()) : root.toggle()
             }
         }
 
@@ -385,7 +401,13 @@ Item {
                 }
                 readonly property bool roomy: !look.column && root.width > 300
                 Pill { visible: root.active && parent.roomy; icon: "󰒭"; onActivated: root.skip() }
-                Pill { visible: root.active && parent.roomy; icon: "󰓛"; onActivated: root.stop() }
+                Pill {
+                    visible: root.active
+                    danger: root.confirmCancel
+                    icon: "󰅖"
+                    label: !parent.roomy ? "" : root.confirmCancel ? "Sure?" : "Cancel"
+                    onActivated: root.cancel()
+                }
                 Pill { visible: !root.active && look.row && parent.roomy; icon: "󰍴"; onActivated: root.nudge(-1) }
                 Pill { visible: !root.active && look.row && parent.roomy; icon: "󰐕"; onActivated: root.nudge(1) }
             }
