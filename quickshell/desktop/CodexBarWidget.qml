@@ -6,7 +6,18 @@ Item {
     id: root
     required property QtObject theme
 
+    WidgetLook { id: look; host: root }
+
+    Tile {
+        anchors.fill: parent
+        visible: look.small
+        theme: root.theme
+        icon: "󰚩"
+        label: "Codex"
+    }
+
     ColumnLayout {
+        visible: !look.small
         anchors.fill: parent
         anchors.margins: 12
         spacing: 8

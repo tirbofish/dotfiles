@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
@@ -10,31 +11,60 @@ PanelWindow {
     required property QtObject theme
     required property string outputKey
     required property string outputName
+    property string storeTab: "plugins"
+    property string renamingPackId: ""
+    property string renameDraft: ""
+    property bool editingWidgetSetting: false
+    readonly property var selectedSpec: {
+        var _ = Lib.WidgetService.settingsStamp
+        return Lib.WidgetService.findSpec(win.outputKey, Lib.WidgetService.selectedId)
+    }
+    readonly property var selectedEntry: selectedSpec
+        ? Lib.WidgetService.catalogEntry(selectedSpec.type) : ({})
+    readonly property var selectedOptions: selectedEntry.options || []
 
-    visible: Lib.WidgetService.editing
+    // Stays mapped (empty input mask, hidden content) so entering edit mode
+    // doesn't wait on a new surface.
+    readonly property bool shown: Lib.WidgetService.editing
+    onShownChanged: if (!shown) editingWidgetSetting = false
     color: "transparent"
     exclusiveZone: 0
     aboveWindows: true
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "desktop-widget-edit"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    focusable: renamingPackId !== "" || editingWidgetSetting
+    WlrLayershell.keyboardFocus: renamingPackId !== "" || editingWidgetSetting
+        ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
     anchors { top: true; left: true; right: true; bottom: true }
-    mask: Region { item: chrome }
+    mask: Region { item: win.shown ? chrome : null }
+
+    function toggleStore() {
+        Lib.WidgetService.pickerOpen = !Lib.WidgetService.pickerOpen
+    }
+
+    function beginRename(pack) {
+        renamingPackId = pack.id
+        renameDraft = pack.name || pack.id
+    }
+
+    function finishRename() {
+        Lib.WidgetService.renamePack(renamingPackId, renameDraft)
+        renamingPackId = ""
+    }
 
     Item {
-        id: stage
         anchors.fill: parent
+        visible: win.shown
 
         Column {
             id: chrome
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 56
-            width: Math.min(560, win.screen.width - 40)
+            width: Math.min(620, win.screen.width - 40)
             spacing: 8
 
             Rectangle {
-                id: bar
                 width: parent.width
                 height: 40
                 radius: 12
@@ -58,130 +88,452 @@ PanelWindow {
                         Layout.fillWidth: true
                     }
 
-                    Rectangle {
-                        width: addTxt.implicitWidth + 20
-                        height: 28
-                        radius: 8
-                        color: win.theme.subtleFill
+                    StoreButton {
+                        label: Lib.WidgetService.pickerOpen ? "Close Store" : "Store"
+                        onClicked: win.toggleStore()
+                    }
+                    StoreButton {
+                        label: "Clear"
+                        danger: true
+                        onClicked: Lib.WidgetService.clearOutput(win.outputKey)
+                    }
+                    StoreButton {
+                        label: "Done"
+                        accent: true
+                        onClicked: Lib.WidgetService.setEditing(false)
+                    }
+                }
+            }
+
+            Rectangle {
+                visible: Lib.WidgetService.settingsOpen && win.selectedSpec
+                width: parent.width
+                height: 64
+                radius: 12
+                color: win.theme.bgCard
+                border.width: 1
+                border.color: win.theme.outline
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 12
+
+                    ColumnLayout {
+                        Layout.preferredWidth: 125
+                        spacing: 0
                         Text {
-                            id: addTxt
-                            anchors.centerIn: parent
-                            text: Lib.WidgetService.pickerOpen ? "Hide picker" : "+ Add"
+                            text: win.selectedEntry.label || "Widget"
+                            font.family: win.theme.textFont
                             font.pixelSize: 13
+                            font.weight: 800
                             color: win.theme.textPrimary
                         }
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: Lib.WidgetService.pickerOpen = !Lib.WidgetService.pickerOpen
+                        Text {
+                            text: "Settings"
+                            font.family: win.theme.textFont
+                            font.pixelSize: 10
+                            color: win.theme.textSecondary
                         }
                     }
 
-                    Rectangle {
-                        width: clearTxt.implicitWidth + 20
-                        height: 28
-                        radius: 8
-                        color: clearMa.containsMouse ? win.theme.accentRed : win.theme.subtleFill
-                        Text {
-                            id: clearTxt
-                            anchors.centerIn: parent
-                            text: "Clear"
-                            font.family: win.theme.textFont
-                            font.pixelSize: 13
-                            font.weight: 600
-                            color: clearMa.containsMouse ? win.theme.textOnAccent : win.theme.textPrimary
-                        }
-                        MouseArea {
-                            id: clearMa
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: Lib.WidgetService.clearOutput(win.outputKey)
+                    Repeater {
+                        model: win.selectedOptions
+                        delegate: RowLayout {
+                            id: optionRow
+                            required property var modelData
+                            readonly property var currentValue:
+                                win.selectedSpec.settings && win.selectedSpec.settings[modelData.key] !== undefined
+                                    ? win.selectedSpec.settings[modelData.key] : modelData.value
+                            spacing: 6
+                            Text {
+                                text: optionRow.modelData.label
+                                font.family: win.theme.textFont
+                                font.pixelSize: 11
+                                color: win.theme.textSecondary
+                            }
+                            Rectangle {
+                                visible: optionRow.modelData.kind !== "text"
+                                width: optionValue.implicitWidth + 18
+                                height: 28
+                                radius: 8
+                                color: optionMa.containsMouse ? win.theme.subtleFillHover : win.theme.subtleFill
+                                Text {
+                                    id: optionValue
+                                    anchors.centerIn: parent
+                                    text: optionRow.modelData.kind === "bool"
+                                        ? (optionRow.currentValue ? "On" : "Off")
+                                        : String(optionRow.currentValue) + (optionRow.modelData.suffix || "")
+                                    font.family: win.theme.textFont
+                                    font.pixelSize: 11
+                                    font.weight: 700
+                                    color: win.theme.accent
+                                }
+                                MouseArea {
+                                    id: optionMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        var next = !optionRow.currentValue
+                                        if (optionRow.modelData.kind === "choice") {
+                                            var values = optionRow.modelData.values || []
+                                            var index = values.indexOf(optionRow.currentValue)
+                                            next = values[(index + 1) % values.length]
+                                        }
+                                        Lib.WidgetService.setSetting(win.outputKey, win.selectedSpec.id,
+                                            optionRow.modelData.key, next)
+                                    }
+                                }
+                            }
+                            TextField {
+                                visible: optionRow.modelData.kind === "text"
+                                Layout.preferredWidth: 245
+                                Layout.preferredHeight: 28
+                                text: String(optionRow.currentValue)
+                                selectByMouse: true
+                                font.family: win.theme.textFont
+                                font.pixelSize: 11
+                                color: win.theme.textPrimary
+                                background: Rectangle {
+                                    radius: 8
+                                    color: win.theme.bgItem
+                                    border.width: parent.activeFocus ? 1 : 0
+                                    border.color: win.theme.accent
+                                }
+                                function save() {
+                                    var value = text.trim()
+                                    if (value) Lib.WidgetService.setSetting(win.outputKey,
+                                        win.selectedSpec.id, optionRow.modelData.key, value)
+                                }
+                                onAccepted: { save(); focus = false }
+                                onEditingFinished: save()
+                                onActiveFocusChanged: win.editingWidgetSetting = activeFocus
+                            }
                         }
                     }
 
-                    Rectangle {
-                        width: doneTxt.implicitWidth + 20
-                        height: 28
-                        radius: 8
-                        color: win.theme.accent
-                        Text {
-                            id: doneTxt
-                            anchors.centerIn: parent
-                            text: "Done"
-                            font.family: win.theme.textFont
-                            font.pixelSize: 13
-                            font.weight: 600
-                            color: win.theme.textOnAccent
-                        }
+                    Text {
+                        visible: win.selectedOptions.length === 0
+                        text: "No configurable options"
+                        font.family: win.theme.textFont
+                        font.pixelSize: 11
+                        color: win.theme.textSecondary
+                        Layout.fillWidth: true
+                    }
+                    Item { Layout.fillWidth: true }
+                    StoreButton {
+                        label: "Reset"
+                        onClicked: Lib.WidgetService.resetSettings(win.outputKey, win.selectedSpec.id)
+                    }
+                    Text {
+                        text: "×"
+                        font.pixelSize: 18
+                        color: win.theme.textSecondary
                         MouseArea {
                             anchors.fill: parent
+                            anchors.margins: -7
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: Lib.WidgetService.setEditing(false)
+                            onClicked: Lib.WidgetService.settingsOpen = false
                         }
                     }
                 }
             }
 
             Rectangle {
-                id: store
                 visible: Lib.WidgetService.pickerOpen
                 width: parent.width
-                height: grid.implicitHeight + 36
+                height: 390
                 radius: 12
                 color: win.theme.bgCard
                 border.width: 1
                 border.color: win.theme.outline
+                clip: true
 
-                Text {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
+                ColumnLayout {
+                    anchors.fill: parent
                     anchors.margins: 10
-                    text: "Click to add · Drag widgets to move · Drag the corner to resize"
-                    font.family: win.theme.textFont
-                    font.pixelSize: 11
-                    font.weight: 600
-                    color: win.theme.textSecondary
-                }
+                    spacing: 10
 
-                GridLayout {
-                    id: grid
-                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 8 }
-                    anchors.topMargin: 28
-                    columns: 2
-                    columnSpacing: 6
-                    rowSpacing: 6
-
-                    Repeater {
-                        model: Lib.WidgetService.catalog
-                        delegate: Rectangle {
-                            required property var modelData
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Widget Store"
+                            font.family: win.theme.textFont
+                            font.pixelSize: 16
+                            font.weight: 800
+                            color: win.theme.textPrimary
                             Layout.fillWidth: true
-                            height: 36
-                            radius: 8
-                            color: cellMa.pressed ? win.theme.subtleFillHover
-                                 : cellMa.containsMouse ? win.theme.subtleFillHover : win.theme.subtleFill
-                            Text {
-                                anchors.centerIn: parent
-                                text: modelData.label
-                                font.family: win.theme.textFont
-                                font.pixelSize: 13
-                                color: win.theme.textPrimary
-                            }
-                            MouseArea {
-                                id: cellMa
+                        }
+                        StoreButton {
+                            id: packSave
+                            visible: win.storeTab === "packs"
+                            label: "+ Save current"
+                            onClicked: Lib.WidgetService.savePack(win.outputKey,
+                                win.screen.width, win.screen.height)
+                        }
+                        TabButton { label: "Plugins"; tab: "plugins" }
+                        TabButton { label: "Packs"; tab: "packs" }
+                    }
+
+                    GridView {
+                        id: pluginGrid
+                        visible: win.storeTab === "plugins"
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        cellWidth: width / 2
+                        cellHeight: 66
+                        model: Lib.WidgetService.catalog
+                        delegate: Item {
+                            required property var modelData
+                            width: pluginGrid.cellWidth
+                            height: pluginGrid.cellHeight
+                            Rectangle {
                                 anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    Lib.WidgetService.addWidget(win.outputKey, modelData.type,
+                                anchors.margins: 3
+                                radius: 10
+                                color: pluginMa.containsMouse ? win.theme.subtleFillHover : win.theme.subtleFill
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 10
+                                    Text {
+                                        text: modelData.icon
+                                        font.family: win.theme.iconFont
+                                        font.pixelSize: 22
+                                        color: win.theme.accent
+                                        Layout.preferredWidth: 28
+                                        horizontalAlignment: Text.AlignHCenter
+                                    }
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 1
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData.label
+                                            font.family: win.theme.textFont
+                                            font.pixelSize: 13
+                                            font.weight: 700
+                                            color: win.theme.textPrimary
+                                            elide: Text.ElideRight
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData.detail
+                                            font.family: win.theme.textFont
+                                            font.pixelSize: 10
+                                            color: win.theme.textSecondary
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+                                    Text { text: "+"; font.pixelSize: 18; color: win.theme.accent }
+                                }
+                                MouseArea {
+                                    id: pluginMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: Lib.WidgetService.addWidget(win.outputKey, modelData.type,
                                         win.screen.width, win.screen.height)
-                                    Lib.WidgetService.pickerOpen = false
                                 }
                             }
                         }
                     }
+
+                    ListView {
+                        id: packList
+                        visible: win.storeTab === "packs"
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        spacing: 8
+                        model: Lib.WidgetService.packs
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: packList.width
+                            height: 72
+                            radius: 10
+                            color: packMa.containsMouse ? win.theme.subtleFillHover : win.theme.subtleFill
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 12
+                                z: 1
+                                RowLayout {
+                                    Layout.preferredWidth: 120
+                                    spacing: 7
+                                    Repeater {
+                                        model: (modelData.widgets || []).slice(0, 4)
+                                        Text {
+                                            required property var modelData
+                                            text: Lib.WidgetService.catalogEntry(modelData.type).icon || "◻"
+                                            font.family: win.theme.iconFont
+                                            font.pixelSize: 18
+                                            color: win.theme.accent
+                                        }
+                                    }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+                                    Text {
+                                        visible: win.renamingPackId !== modelData.id
+                                        text: modelData.name || modelData.id
+                                        font.family: win.theme.textFont
+                                        font.pixelSize: 14
+                                        font.weight: 700
+                                        color: win.theme.textPrimary
+                                    }
+                                    TextField {
+                                        visible: win.renamingPackId === modelData.id
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 30
+                                        text: win.renameDraft
+                                        selectByMouse: true
+                                        font.family: win.theme.textFont
+                                        font.pixelSize: 13
+                                        color: win.theme.textPrimary
+                                        background: Rectangle {
+                                            radius: 7
+                                            color: win.theme.bgItem
+                                            border.width: 1
+                                            border.color: win.theme.accent
+                                        }
+                                        onTextEdited: win.renameDraft = text
+                                        onAccepted: win.finishRename()
+                                        onEditingFinished: if (win.renamingPackId === modelData.id)
+                                            win.finishRename()
+                                        Keys.onEscapePressed: win.renamingPackId = ""
+                                        onVisibleChanged: if (visible) Qt.callLater(forceActiveFocus)
+                                    }
+                                    Text {
+                                        text: (modelData.widgets || []).length + " widgets · works with every theme"
+                                        font.family: win.theme.textFont
+                                        font.pixelSize: 11
+                                        color: win.theme.textSecondary
+                                    }
+                                }
+                                Text {
+                                    visible: win.renamingPackId !== modelData.id
+                                    text: "✎"
+                                    font.pixelSize: 15
+                                    color: win.theme.textSecondary
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        anchors.margins: -8
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: win.beginRename(modelData)
+                                    }
+                                }
+                                Text {
+                                    text: "Apply"
+                                    font.family: win.theme.textFont
+                                    font.pixelSize: 12
+                                    font.weight: 700
+                                    color: win.theme.accent
+                                }
+                                Text {
+                                    text: "×"
+                                    font.pixelSize: 18
+                                    color: win.theme.accentRed
+                                    z: 2
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        anchors.margins: -8
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Lib.WidgetService.removePack(modelData.id)
+                                    }
+                                }
+                            }
+                            MouseArea {
+                                id: packMa
+                                z: 0
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Lib.WidgetService.applyPack(win.outputKey, modelData,
+                                    win.screen.width, win.screen.height)
+                            }
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            visible: packList.count === 0
+                            text: "No widget packs yet"
+                            font.family: win.theme.textFont
+                            font.pixelSize: 12
+                            color: win.theme.textSecondary
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: win.storeTab === "plugins"
+                            ? "Click a plugin to add it · drag to move · drag the corner to resize"
+                            : "Packs are reusable layouts and stay independent of themes"
+                        font.family: win.theme.textFont
+                        font.pixelSize: 10
+                        color: win.theme.textSecondary
+                        horizontalAlignment: Text.AlignHCenter
+                    }
                 }
+            }
+        }
+    }
+
+    component StoreButton: Rectangle {
+        id: button
+        property string label: ""
+        property bool accent: false
+        property bool danger: false
+        signal clicked()
+        Layout.preferredWidth: buttonText.implicitWidth + 20
+        Layout.preferredHeight: 28
+        radius: 8
+        color: accent ? win.theme.accent
+            : danger && buttonMa.containsMouse ? win.theme.accentRed
+            : buttonMa.containsMouse ? win.theme.subtleFillHover : win.theme.subtleFill
+        Text {
+            id: buttonText
+            anchors.centerIn: parent
+            text: button.label
+            font.family: win.theme.textFont
+            font.pixelSize: 13
+            font.weight: 600
+            color: button.accent || (button.danger && buttonMa.containsMouse)
+                ? win.theme.textOnAccent : win.theme.textPrimary
+        }
+        MouseArea {
+            id: buttonMa
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: button.clicked()
+        }
+    }
+
+    component TabButton: Rectangle {
+        id: tabButton
+        required property string label
+        required property string tab
+        Layout.preferredWidth: tabText.implicitWidth + 22
+        Layout.preferredHeight: 28
+        radius: 8
+        color: win.storeTab === tab ? win.theme.accent : win.theme.subtleFill
+        Text {
+            id: tabText
+            anchors.centerIn: parent
+            text: tabButton.label
+            font.family: win.theme.textFont
+            font.pixelSize: 12
+            font.weight: 700
+            color: win.storeTab === tabButton.tab ? win.theme.textOnAccent : win.theme.textPrimary
+        }
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                win.storeTab = tabButton.tab
             }
         }
     }

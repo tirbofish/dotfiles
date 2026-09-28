@@ -331,6 +331,11 @@ Scope {
     }
 
     Process {
+        id: persistOutput
+        command: ["python3", Quickshell.env("HOME") + "/.config/hypr/scripts/display-audio.py", "save"]
+    }
+
+    Process {
         id: defaultAction
         property string errorText: ""
         stderr: StdioCollector { onStreamFinished: defaultAction.errorText = this.text.trim() }
@@ -345,6 +350,10 @@ Scope {
             }
             root.status = "Selected " + pending.description + "."
             root.statusError = false
+            if (!pending.input) {
+                persistOutput.running = false
+                persistOutput.running = true
+            }
             refreshTimer.restart()
         }
     }

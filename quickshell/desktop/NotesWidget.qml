@@ -11,7 +11,18 @@ Item {
 
     function clearFocus() { area.focus = false }
 
+    WidgetLook { id: look; host: root }
+
+    Tile {
+        anchors.fill: parent
+        visible: look.small
+        theme: root.theme
+        icon: "󰎚"
+        label: root.text.split("\n")[0] || "Notes"
+    }
+
     ColumnLayout {
+        visible: !look.small
         anchors.fill: parent
         spacing: 4
 
@@ -30,7 +41,7 @@ Item {
             placeholderText: "Write something…"
             placeholderTextColor: root.theme.textSecondary
             font.family: root.theme.textFont
-            font.pixelSize: Math.max(13, Math.min(22, root.height * 0.12))
+            font.pixelSize: Math.max(12, Math.min(22, root.height * 0.12, root.width * 0.12))
             background: Rectangle { color: "transparent" }
             Component.onCompleted: text = root.text
             onPressed: area.forceActiveFocus()

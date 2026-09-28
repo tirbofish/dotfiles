@@ -23,9 +23,11 @@ ShellRoot {
         function onRawEvent(ev) {
             if (!ev || ev.name !== "minimized") return
             const fields = ev.parse(2)
-            if (fields.length === 2)
+            const addr = fields[0]
+            const on = fields[1] === "1" || fields[1] === "true"
+            if (addr)
                 Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr/scripts/minimized-windows.sh",
-                    fields[1] === "1" ? "hide" : "show", fields[0]])
+                    on ? "hide" : "show", addr])
         }
     }
 
@@ -75,17 +77,12 @@ ShellRoot {
                 }
             }
 
-            Variants {
-                model: {
+            Desktop.DesktopLayer {
+                screen: v.modelData
+                theme: screenTheme
+                outputKey: {
                     var _ = Lib.WidgetService.stamp
-                    return Lib.WidgetService.widgetsOn(Lib.WidgetService.outputKeyForScreen(v.modelData))
-                }
-                Desktop.WidgetShell {
-                    property var modelData
-                    screen: v.modelData
-                    theme: screenTheme
-                    spec: modelData
-                    outputKey: Lib.WidgetService.outputKeyForScreen(v.modelData)
+                    return Lib.WidgetService.outputKeyForScreen(v.modelData)
                 }
             }
 

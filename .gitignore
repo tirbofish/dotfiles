@@ -57,6 +57,7 @@
 **/*.p12
 **/*.pfx
 **/*.o
+**/*.so
 **/*.pyc
 **/__pycache__/
 **/bookmarks
@@ -85,6 +86,7 @@
 /hypr/monitors.conf
 /hypr/monitors.lua
 /quickshell/lib/test-*.cjs
+/quickshell/lib/audio-outputs.json
 
 # Last-screenshot filename and other per-machine app state
 /swappy/config
@@ -97,3 +99,5 @@
 /systemd/user/cpu-starvation-guard.service
 /systemd/user/pdcli.service
 /systemd/user/rclone-zimaos.service
+/systemd/user/codex-router.service
+/systemd/user/antigravity-cli-daemon.service

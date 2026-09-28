@@ -18,6 +18,8 @@ QtObject {
     readonly property color bgItemHover: Configuration.useCustomColors
         ? Qt.lighter(Configuration.customBg, 2.2) : (isDarkMode ? "#374145" : Qt.rgba(0, 0, 0, 0.08))
     readonly property color bgWidget: bgCard
+    readonly property color glassFill: Qt.rgba(bgCard.r, bgCard.g, bgCard.b, isDarkMode ? 0.46 : 0.58)
+    readonly property color glassHighlight: isDarkMode ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.42)
 
     // Text
     readonly property color textPrimary: Configuration.useCustomColors

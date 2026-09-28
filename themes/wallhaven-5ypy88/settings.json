@@ -35,8 +35,8 @@
   "powerMenuCassiniDark": "#686868",
   "powerMenuCassiniLight": "#686868",
   "clipboardMaxItems": 20,
-  "idleLockMin": 3,
-  "idleScreenOffMin": 6,
+  "idleLockMin": 10,
+  "idleScreenOffMin": 15,
   "idleSleepMin": 20,
   "codexbarTray": true,
   "codexbarRefreshSec": 300

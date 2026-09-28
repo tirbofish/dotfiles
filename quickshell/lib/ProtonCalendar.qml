@@ -6,6 +6,7 @@ import Quickshell.Io
 Scope {
     id: root
     property var events: []
+    property var colors: ({})          // calendar_id → "#rrggbb"
     property date now: new Date()
     property var updatedAt: null
     property string error: ""
@@ -26,6 +27,7 @@ Scope {
             }
             return { title: String(e.title || "Untitled event"),
                 location: String(e.location || ""), allDay: !!e.all_day,
+                calendarId: String(e.calendar_id || ""),
                 start: timestamp(e.start), end: timestamp(e.end) }
         }).sort((a, b) => a.start - b.start)
     }
@@ -37,19 +39,41 @@ Scope {
         end.setDate(end.getDate() + 30)
         fetch.command = ["timeout", "120", Quickshell.env("HOME") + "/.local/bin/proton",
             "--no-input", "--no-log", "--log-level", "error", "--output", "json",
-            "calendar", "events", "list", "--start", Qt.formatDate(root.now, "yyyy-MM-dd"),
-            "--end", Qt.formatDate(end, "yyyy-MM-dd")]
+            "calendar", "events", "list", "--limit", "0",
+            "--after", Qt.formatDate(root.now, "yyyy-MM-dd"),
+            "--before", Qt.formatDate(end, "yyyy-MM-dd")]
         fetch.running = true
+        if (!calendars.running) calendars.running = true
+    }
+
+    Process {
+        id: calendars
+        command: ["timeout", "60", Quickshell.env("HOME") + "/.local/bin/proton",
+            "--no-input", "--no-log", "--log-level", "error", "--output", "json",
+            "calendar", "settings", "calendars", "list"]
+        stdout: StdioCollector { id: calendarList }
+        // Colours are cosmetic: on failure keep the last good set.
+        onExited: (code) => {
+            if (code !== 0) return
+            try {
+                var map = {}
+                for (const c of JSON.parse(calendarList.text).calendars || [])
+                    if (c.id && /^#[0-9a-f]{6}$/i.test(c.color)) map[c.id] = c.color
+                root.colors = map
+            } catch (e) {}
+        }
     }
 
     Process {
         id: fetch
         stdout: StdioCollector { id: response }
-        stderr: StdioCollector {}
+        stderr: StdioCollector { id: errText }
         onExited: (code) => {
             if (code !== 0) {
+                var detail = errText.text.trim().split("\n").pop()
                 root.error = code === 124 ? "Proton timed out. Try Refresh."
-                    : "Couldn't refresh Proton. Check connection or CLI sign-in."
+                    : "Couldn't refresh Proton" + (detail ? ": " + detail : ". Check connection or CLI sign-in.")
+                console.warn("[ProtonCalendar] exit", code, errText.text)
                 return
             }
             try {

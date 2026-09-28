@@ -199,7 +199,10 @@ def main() -> int:
         current = LOCK_PATH.read_text().strip()
         if current != str(stamp):
             return 0
-        return apply_all()
+        rc = apply_all()
+    restore = Path(__file__).resolve().parent / "display-audio.py"
+    subprocess.run(["python3", str(restore), "restore"], check=False)
+    return rc
 
 
 if __name__ == "__main__":

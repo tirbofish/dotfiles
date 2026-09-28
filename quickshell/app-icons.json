@@ -1,6 +1,7 @@
 {
   "default": "",
   "icons": [
+    { "match": ["chatgpt-community", "codex-desktop", "chatgpt"], "icon": "icons/codex.svg", "tint": true },
     { "match": ["obsidian"], "icon": "icons/obsidian.svg", "tint": true },
     { "match": ["firefox", "zen", "librewolf"], "icon": "󰈹" },
     { "match": ["chromium", "chrome", "thorium"], "icon": "" },

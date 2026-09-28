@@ -84,6 +84,7 @@ general {
     after_sleep_cmd = $HOME/.config/hypr/scripts/post-sleep.sh
     ignore_dbus_inhibit = false
     ignore_systemd_inhibit = false
+    inhibit_sleep = 3
 }
 
 EOF
@@ -116,6 +117,15 @@ listener {
     on-resume = hyprctl dispatch 'hl.dsp.dpms({action = "on"})'
 }
 
+listener {
+    timeout = $screen_s
+    on-timeout = hyprctl dispatch 'hl.dsp.dpms({action = "off"})'
+    on-resume = hyprctl dispatch 'hl.dsp.dpms({action = "on"})'
+    ignore_inhibit = true
+    condition_cmd = pidof hyprlock >/dev/null
+    condition_retry = 10
+}
+
 EOF
     fi
     if (( sleep_m > 0 )); then
@@ -124,9 +134,22 @@ listener {
     timeout = $sleep_s
     on-timeout = systemctl suspend
 }
+
+listener {
+    timeout = $sleep_s
+    on-timeout = systemctl suspend
+    ignore_inhibit = true
+    condition_cmd = pidof hyprlock >/dev/null
+    condition_retry = 10
+}
 EOF
     fi
   } > "$conf.tmp"
+  if [[ -f "$conf" ]] && cmp -s "$conf.tmp" "$conf" && pgrep -x hypridle >/dev/null; then
+    rm -f "$conf.tmp"
+    echo "lock=${lock_m}m screen=${screen_m}m sleep=${sleep_m}m"
+    return
+  fi
   mv "$conf.tmp" "$conf"
 
   pkill -x hypridle >/dev/null 2>&1 || true

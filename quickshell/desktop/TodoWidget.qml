@@ -9,6 +9,8 @@ Item {
     property var items: []
     signal todosChanged(var items)
 
+    WidgetLook { id: look; host: root }
+
     function clearFocus() { addField.focus = false }
 
     function persist(next) {
@@ -46,26 +48,50 @@ Item {
         root.persist(next)
     }
 
+    Tile {
+        anchors.fill: parent
+        visible: look.small
+        theme: root.theme
+        icon: "󰄬"
+        value: String((root.items || []).filter(t => !t.done).length)
+        label: "to do"
+    }
+
     ColumnLayout {
+        visible: !look.small
         anchors.fill: parent
         anchors.margins: 12
         spacing: 8
 
-        Text {
-            text: "Todo"
-            font.family: root.theme.textFont
-            font.pixelSize: 14
-            font.weight: 700
-            color: root.theme.textPrimary
+        RowLayout {
+            visible: !look.row
             Layout.fillWidth: true
+            Text {
+                text: "Todo"
+                font.family: root.theme.textFont
+                font.pixelSize: 15
+                font.weight: 800
+                color: root.theme.textPrimary
+                Layout.fillWidth: true
+            }
+            Text {
+                readonly property int pending: (root.items || []).filter(t => !t.done).length
+                visible: (root.items || []).length > 0
+                text: pending === 0 ? "All done ✓" : pending + " left"
+                font.family: root.theme.textFont
+                font.pixelSize: 11
+                font.weight: 700
+                color: pending === 0 ? root.theme.accent : root.theme.textSecondary
+            }
         }
 
-        ListView {
+        GridView {
             id: list
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            spacing: 6
+            cellWidth: look.wide ? Math.max(160, width / 2) : width
+            cellHeight: 44
             interactive: !Lib.WidgetService.editing
             model: root.items || []
             ScrollBar.vertical: ScrollBar {}
@@ -73,8 +99,8 @@ Item {
             delegate: Rectangle {
                 required property var modelData
                 required property int index
-                width: list.width
-                height: Math.max(28, row.implicitHeight + 10)
+                width: list.cellWidth - (look.wide ? 6 : 0)
+                height: list.cellHeight - 6
                 radius: 8
                 color: root.theme.subtleFill
 
@@ -116,9 +142,8 @@ Item {
                         font.pixelSize: 13
                         font.strikeout: !!modelData.done
                         color: modelData.done ? root.theme.textSecondary : root.theme.textPrimary
-                        wrapMode: Text.Wrap
+                        wrapMode: Text.NoWrap
                         elide: Text.ElideRight
-                        maximumLineCount: 3
                     }
 
                     Text {

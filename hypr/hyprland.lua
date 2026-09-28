@@ -161,9 +161,13 @@ local function set_touchscreen_enabled(enabled)
 end
 
 hl.on("monitor.added",   apply_monitors_delayed)
-hl.on("monitor.removed", set_wallpapers_delayed)
+hl.on("monitor.removed", function()
+    set_wallpapers_delayed()
+    hl.exec_cmd("python3 " .. scripts .. "/display-audio.py restore")
+end)
 
 hl.permission("/usr/(bin|local/bin)/hyprpm", "plugin", "allow")
+hl.permission("/usr/(bin|local/bin)/hyprctl", "plugin", "allow")
 hl.exec_cmd("pgrep -x snappy-switcher >/dev/null || " .. snappy_switcher .. " --daemon")
 
 -- =========================================================================
@@ -175,10 +179,11 @@ end
 
 hl.on("hyprland.start", function()
     hl.exec_cmd("hyprpm reload")
+    hl.exec_cmd("hyprctl plugin list | grep -q hypr-minimize || hyprctl plugin load " .. home .. "/.config/hypr/plugins/hypr-minimize/hypr-minimize.so")
     hl.exec_cmd("qs")
     hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE && systemctl --user stop kanshi.service; systemctl --user restart pyprland.service")
     hl.exec_cmd("awww-daemon")
-    hl.exec_cmd("hypridle")
+    hl.exec_cmd(scripts .. "/idle.sh apply")
     hl.exec_cmd(vicinae .. " server --replace")
     -- logind's default HandlePowerKey=poweroff wins unless we inhibit it.
     hl.exec_cmd("systemctl --user start hypr-power-key-lock.service")
@@ -464,9 +469,7 @@ hl.config({
         disable_hyprland_logo    = true,
         disable_splash_rendering = true,
         force_default_wallpaper  = 0,
-        animate_manual_resizes   = true,
-        enable_swallow           = true,
-        swallow_regex            = "^(kitty)$"
+        animate_manual_resizes   = true
     },
     gestures = {
         workspace_swipe_use_r   = false,
@@ -560,6 +563,7 @@ hl.on("config.reloaded", workspace_float.sync)
 
 hl.layer_rule({ match = { namespace = "snappy-switcher" }, blur = true, ignore_alpha = 0.01 })
 hl.layer_rule({ match = { namespace = "notifications" }, blur = true, ignore_alpha = 0.2 })
+hl.layer_rule({ match = { namespace = "desktop-widget" }, blur = true, ignore_alpha = 0.2 })
 
 -- =========================================================================
 -- Keybindings
@@ -589,14 +593,6 @@ hl.bind(mod .. " + period", hl.dsp.exec_cmd(scripts .. "/emoji.sh"), { descripti
 hl.bind(mod .. " + X", hl.dsp.window.close())
 hl.bind(mod .. " + N", hl.dsp.exec_cmd(scripts .. "/minimized-windows.sh hide"), { description = "Minimize window" })
 hl.bind(mod .. " + SHIFT + N", hl.dsp.exec_cmd(scripts .. "/minimized-windows.sh menu"), { description = "Restore minimized window" })
-hl.bind(mod .. " + F", function()
-    hl.dispatch(hl.dsp.window.float({ action = "toggle" }))
-    workspace_float.schedule()
-end)
-hl.bind(mod .. " + SHIFT + F", function()
-    hl.dispatch(hl.dsp.exec_cmd(hyprfloat .. " togglefloat"))
-    workspace_float.schedule(200)
-end, { description = "Toggle workspace / tiled mode" })
 hl.bind(mod .. " + " .. alt .. " + F", function()
     hl.dispatch(hl.dsp.window.float({ action = "set" }))
     hl.dispatch(hl.dsp.window.resize({ x = 900, y = 600 }))
@@ -604,6 +600,8 @@ hl.bind(mod .. " + " .. alt .. " + F", function()
     workspace_float.schedule()
 end)
 local float_max_saved = {}
+local float_l_saved = {}
+local last_float_geom = {}
 local function reserved_sides(r)
     r = r or {}
     return r.left or r[1] or 0, r.top or r[2] or 0, r.right or r[3] or 0, r.bottom or r[4] or 0
@@ -632,10 +630,87 @@ local function window_geom(win)
         h = size.y or size.height or size[2] or 0,
     }
 end
-local function place_floating(x, y, w, h)
-    hl.dispatch(hl.dsp.window.resize({ x = math.floor(w), y = math.floor(h), relative = false }))
-    hl.dispatch(hl.dsp.window.move({ x = math.floor(x), y = math.floor(y), relative = false }))
+local function window_selector(win)
+    if not win then return nil end
+    if type(win) == "string" then
+        return win:find("^address:") and win or ("address:" .. win)
+    end
+    local a = win.address
+    if not a then return nil end
+    a = tostring(a)
+    return a:find("^address:") and a or ("address:" .. a)
 end
+local function place_floating(x, y, w, h, win)
+    local resize = { x = math.floor(w), y = math.floor(h), relative = false }
+    local move = { x = math.floor(x), y = math.floor(y), relative = false }
+    local sel = window_selector(win)
+    if sel then
+        resize.window = sel
+        move.window = sel
+    end
+    hl.dispatch(hl.dsp.window.resize(resize))
+    hl.dispatch(hl.dsp.window.move(move))
+end
+local function save_float_geom(win)
+    if not win then return end
+    local g = window_geom(win)
+    if g.w < 50 or g.h < 50 then return end
+    last_float_geom[tostring(win.address)] = g
+end
+local function restore_float_geom(win)
+    if not win then return false end
+    local prev = last_float_geom[tostring(win.address)]
+    if not prev or prev.w < 50 or prev.h < 50 then return false end
+    place_floating(prev.x, prev.y, prev.w, prev.h, win)
+    return true
+end
+local function workspace_id_of(win)
+    local ws = win and win.workspace
+    return ws and ws.id
+end
+hl.on("window.close", function(win)
+    local a = win and tostring(win.address)
+    if not a then return end
+    last_float_geom[a] = nil
+    float_l_saved[a] = nil
+    float_max_saved[a] = nil
+end)
+hl.bind(mod .. " + F", function()
+    local win = hl.get_active_window()
+    if not win then return end
+    if win.floating then
+        save_float_geom(win)
+        hl.dispatch(hl.dsp.window.float({ action = "unset" }))
+    else
+        hl.dispatch(hl.dsp.window.float({ action = "set" }))
+        restore_float_geom(win)
+    end
+    workspace_float.schedule()
+end, { description = "Toggle float, restore last size and position" })
+hl.bind(mod .. " + SHIFT + F", function()
+    local active = hl.get_active_window()
+    local wsid = workspace_id_of(active)
+    local any_float = false
+    if wsid then
+        for _, w in ipairs(hl.get_windows() or {}) do
+            if workspace_id_of(w) == wsid and w.floating then
+                any_float = true
+                save_float_geom(w)
+            end
+        end
+    end
+    hl.dispatch(hl.dsp.exec_cmd(hyprfloat .. " togglefloat"))
+    workspace_float.schedule(200)
+    if not any_float and wsid then
+        hl.timer(function()
+            for _, w in ipairs(hl.get_windows() or {}) do
+                if workspace_id_of(w) == wsid and w.floating then
+                    restore_float_geom(w)
+                end
+            end
+        end, { timeout = 80, type = "oneshot" })
+    end
+end, { description = "Toggle workspace / tiled mode" })
 hl.bind(mod .. " + M", function()
     local win = hl.get_active_window()
     if not win then return end
@@ -668,26 +743,50 @@ hl.bind(mod .. " + SHIFT + UP",   hl.dsp.layout("togglesplit"))
 hl.bind(mod .. " + G",    hl.dsp.group.toggle())
 
 hl.bind(mod .. " + L", function()
-    if not hl.get_active_window() then return end
+    local win = hl.get_active_window()
+    if not win then return end
     local tw, th = 1440, 1080
+    local extra = 16
     local area = monitor_work_area()
-    hl.dispatch(hl.dsp.window.float({ action = "set" }))
+    local addr = tostring(win.address)
+    local g = window_geom(win)
+    local tx, ty, tw2, th2
     if area and area.w > 50 and area.h > 50 then
-        local s = math.min(1, area.w / tw, area.h / th)
-        local w = math.max(200, math.floor(tw * s))
-        local h = math.max(200, math.floor(th * s))
-        if w / h > tw / th then
-            w = math.max(200, math.floor(h * tw / th))
-        else
-            h = math.max(200, math.floor(w * th / tw))
+        tw2 = math.max(200, math.min(tw, math.floor(area.w - extra)))
+        th2 = math.max(200, math.min(th, math.floor(area.h - extra)))
+        tx = area.x + (area.w - tw2) / 2
+        ty = area.y + (area.h - th2) / 2
+    end
+    local in_layout = win.floating and tx
+        and math.abs(g.x - tx) <= 10 and math.abs(g.y - ty) <= 10
+        and math.abs(g.w - tw2) <= 20 and math.abs(g.h - th2) <= 20
+    if in_layout and float_l_saved[addr] then
+        local prev = float_l_saved[addr]
+        if win.floating then
+            save_float_geom(win)
         end
-        place_floating(area.x + (area.w - w) / 2, area.y + (area.h - h) / 2, w, h)
+        if prev.floating then
+            place_floating(prev.x, prev.y, prev.w, prev.h)
+        else
+            hl.dispatch(hl.dsp.window.float({ action = "unset" }))
+        end
+        float_l_saved[addr] = nil
+        workspace_float.schedule()
+        return
+    end
+    float_l_saved[addr] = {
+        x = g.x, y = g.y, w = g.w, h = g.h,
+        floating = not not win.floating,
+    }
+    hl.dispatch(hl.dsp.window.float({ action = "set" }))
+    if tx then
+        place_floating(tx, ty, tw2, th2)
     else
         hl.dispatch(hl.dsp.window.resize({ x = tw, y = th, relative = false }))
         hl.dispatch(hl.dsp.window.center())
     end
     workspace_float.schedule()
-end, { description = "Float 1440x1080, fitted to work area" })
+end, { description = "Float 1440x1080, toggle previous position" })
 
 hl.bind(mod .. " + CTRL + left",  hl.dsp.focus({ workspace = "m-1" }))
 hl.bind(mod .. " + CTRL + right", hl.dsp.focus({ workspace = "m+1" }))
@@ -739,9 +838,56 @@ hl.bind(alt .. " + SHIFT + TAB", hl.dsp.exec_cmd(snappy_switcher .. " prev --wor
 hl.bind(alt .. " + CTRL + TAB", hl.dsp.exec_cmd(snappy_switcher .. " next --mod alt"), { description = "Snappy Switcher (all displays)" })
 hl.bind(alt .. " + CTRL + SHIFT + TAB", hl.dsp.exec_cmd(snappy_switcher .. " prev --mod alt"), { description = "Snappy Switcher (all displays, previous)" })
 
--- Focused floating windows must be explicitly raised; harmless for tiled ones.
-hl.on("window.active", function()
+-- Focused floating windows must be explicitly raised. Maximized windows
+-- sit under later floats unless those floats are sent to the bottom first.
+local raise_gen = 0
+local raising = false
+local function window_covers_work_area(win)
+    if not win or not win.floating then return false end
+    local fs = tonumber(win.fullscreen) or 0
+    if fs > 0 then return true end
+    local area = monitor_work_area(win.monitor)
+    if not area then return false end
+    local g = window_geom(win)
+    return math.abs(g.x - area.x) <= 10 and math.abs(g.y - area.y) <= 10
+        and math.abs(g.w - area.w) <= 20 and math.abs(g.h - area.h) <= 20
+end
+local function raise_focused(win)
+    if raising then return end
+    win = win or hl.get_active_window()
+    if not win or win.address == nil then win = hl.get_active_window() end
+    if not win or win.hidden or win.mapped == false then return end
+    local class = win.class or win.initial_class or ""
+    if class == "xpet" then return end
+    local title = win.title or ""
+    if title:find("^hyprfloat:") then return end
+    local sel = window_selector(win)
+    if not sel then return end
+    raising = true
+    if window_covers_work_area(win) then
+        local wsid = workspace_id_of(win)
+        for _, other in ipairs(hl.get_windows() or {}) do
+            if other.address ~= win.address and other.floating
+                and not other.pinned and not other.hidden
+                and workspace_id_of(other) == wsid then
+                local osel = window_selector(other)
+                if osel then
+                    hl.dispatch(hl.dsp.window.alter_zorder({ mode = "bottom", window = osel }))
+                end
+            end
+        end
+    end
+    hl.dispatch(hl.dsp.window.alter_zorder({ mode = "top", window = sel }))
     hl.dispatch(hl.dsp.window.bring_to_top())
+    raising = false
+end
+hl.on("window.active", function(win)
+    raise_gen = raise_gen + 1
+    local gen = raise_gen
+    -- After Snappy's 5ms focus+raise so a maximized window can reclaim the top.
+    hl.timer(function()
+        if gen == raise_gen then raise_focused(win or hl.get_active_window()) end
+    end, { timeout = 20, type = "oneshot" })
 end)
 
 hl.bind(mod .. " + TAB", hl.dsp.exec_cmd(scripts .. "/desktop-mode.sh mission-toggle"), { description = "Mission Control" })

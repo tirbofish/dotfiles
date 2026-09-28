@@ -6,8 +6,8 @@ import Quickshell.Io
 Scope {
     id: root
 
-    readonly property int barCount: 24
-    property var values: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    readonly property int barCount: 64   // keep in sync with bars= in cava-bars.conf
+    property var values: new Array(barCount).fill(0)
     property bool available: false
     readonly property string configPath:
         Qt.resolvedUrl("../cava-bars.conf").toString().replace("file://", "")

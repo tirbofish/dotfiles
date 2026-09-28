@@ -14,6 +14,7 @@ STATUS="$RUNTIME/hyprlock-biopass.status"
 LOCKDIR="$RUNTIME/hyprlock-biopass.lock"
 SKIP="$RUNTIME/hyprlock-skip-biopass"
 HELPER="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/hyprlock-biopass.sh"
+CAVA_LOCK="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/scripts/cava-lock.sh"
 
 no_biopass=0
 lid_open=0
@@ -88,6 +89,7 @@ cleanup() {
     wait "$waiter_pid" 2>/dev/null || true
     waiter_pid=""
   fi
+  "$CAVA_LOCK" stop >/dev/null 2>&1 || true
   rm -f "$ARMED" "$TRIGGER" "$DONE" "$STATUS"
   rmdir "$LOCKDIR" 2>/dev/null || true
 }
@@ -95,6 +97,8 @@ trap cleanup EXIT INT TERM
 
 rm -f "$TRIGGER" "$DONE" "$STATUS"
 : >"$STATUS"
+
+"$CAVA_LOCK" start >/dev/null 2>&1 || true
 
 hyprlock "${hyprlock_args[@]}" &
 hyprlock_pid=$!

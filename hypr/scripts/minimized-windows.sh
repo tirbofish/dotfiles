@@ -12,6 +12,7 @@ normalize_address() {
 hide() {
     local target
     target="$(normalize_address "${1:-$(hyprctl -j activewindow | jq -r .address)}")"
+    hyprctl -q dispatch "hl.dsp.window.fullscreen({ action = \"unset\", window = \"address:$target\" })"
     hyprctl -q dispatch "hl.dsp.window.move({ workspace = \"special:minimized\", follow = false, window = \"address:$target\" })"
 }
 

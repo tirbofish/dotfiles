@@ -407,6 +407,8 @@ Scope {
             root.load()
             root.ready = true
             root.writePowerMenuColors()
+            root.clampIdle()
+            idleApplyTimer.restart()
             if (root.currentTheme)
                 themeFile.reload()
         }
@@ -425,6 +427,7 @@ Scope {
             root._writeSideFiles()
             root.clampIdle()
             root.clampClipboard()
+            idleApplyTimer.restart()
         }
         onLoadFailed: {
             // First visit to this pack: keep live settings and seed the file.

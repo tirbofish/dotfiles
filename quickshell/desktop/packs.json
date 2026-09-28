@@ -1,0 +1,108 @@
+{
+  "packs": [
+    {
+      "id": "laptop-focus",
+      "name": "Laptop focus",
+      "screenW": 1440,
+      "screenH": 800,
+      "widgets": [
+        {
+          "type": "notes",
+          "x": 1019,
+          "y": 63,
+          "w": 413,
+          "h": 290,
+          "settings": {}
+        },
+        {
+          "type": "clock",
+          "x": 8,
+          "y": 55,
+          "w": 403,
+          "h": 242,
+          "settings": {}
+        },
+        {
+          "type": "calendar",
+          "x": 8,
+          "y": 308,
+          "w": 398,
+          "h": 418,
+          "settings": {}
+        },
+        {
+          "type": "todo",
+          "x": 1021,
+          "y": 370,
+          "w": 411,
+          "h": 380,
+          "settings": {}
+        }
+      ]
+    },
+    {
+      "id": "pack_mukylxcv",
+      "name": "My pack 4",
+      "screenW": 1440,
+      "screenH": 960,
+      "widgets": [
+        {
+          "type": "notes",
+          "x": 1019,
+          "y": 68,
+          "w": 413,
+          "h": 290,
+          "settings": {}
+        },
+        {
+          "type": "clock",
+          "x": 8,
+          "y": 69,
+          "w": 396,
+          "h": 184,
+          "settings": {}
+        },
+        {
+          "type": "calendar",
+          "x": 8,
+          "y": 261,
+          "w": 398,
+          "h": 418,
+          "settings": {}
+        },
+        {
+          "type": "todo",
+          "x": 1021,
+          "y": 365,
+          "w": 411,
+          "h": 380,
+          "settings": {}
+        },
+        {
+          "type": "pomodoro",
+          "x": 411,
+          "y": 69,
+          "w": 314,
+          "h": 185,
+          "settings": {}
+        },
+        {
+          "type": "media",
+          "x": 1112,
+          "y": 834,
+          "w": 320,
+          "h": 118,
+          "settings": {}
+        },
+        {
+          "type": "stats",
+          "x": 730,
+          "y": 70,
+          "w": 284,
+          "h": 185,
+          "settings": {}
+        }
+      ]
+    }
+  ]
+}

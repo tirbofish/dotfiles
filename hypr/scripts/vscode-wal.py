@@ -314,50 +314,8 @@ def main() -> int:
         "welcomePage.progress.background": surface2,
         "welcomePage.progress.foreground": accent,
     }
-    settings["editor.tokenColorCustomizations"] = {
-        "comments": muted,
-        "strings": secondary,
-        "keywords": accent,
-        "functions": c[5],
-        "numbers": c[3],
-        "types": c[2],
-        "variables": fg,
-        "textMateRules": [
-            {"scope": ["comment", "punctuation.definition.comment"], "settings": {"foreground": muted, "fontStyle": "italic"}},
-            {"scope": ["string", "punctuation.definition.string"], "settings": {"foreground": secondary}},
-            {"scope": ["constant.numeric", "constant.other.color"], "settings": {"foreground": c[3]}},
-            {"scope": ["constant.language", "constant.character.escape"], "settings": {"foreground": danger}},
-            {"scope": ["keyword", "storage", "storage.type", "storage.modifier"], "settings": {"foreground": accent}},
-            {"scope": ["entity.name.function", "support.function", "meta.function-call"], "settings": {"foreground": c[5]}},
-            {"scope": ["entity.name.class", "entity.name.type", "support.type", "support.class"], "settings": {"foreground": c[2]}},
-            {"scope": ["variable", "support.variable", "meta.definition.variable"], "settings": {"foreground": fg}},
-            {"scope": ["entity.name.tag", "punctuation.definition.tag"], "settings": {"foreground": accent}},
-            {"scope": ["entity.other.attribute-name"], "settings": {"foreground": c[5]}},
-            {"scope": ["markup.heading"], "settings": {"foreground": accent, "fontStyle": "bold"}},
-            {"scope": ["markup.underline.link"], "settings": {"foreground": secondary}},
-            {"scope": ["invalid", "invalid.illegal"], "settings": {"foreground": danger}},
-        ],
-    }
-    settings["editor.semanticTokenColorCustomizations"] = {
-        "enabled": True,
-        "rules": {
-            "comment": muted,
-            "string": secondary,
-            "keyword": accent,
-            "function": c[5],
-            "method": c[5],
-            "variable": fg,
-            "parameter": dim,
-            "property": fg,
-            "type": c[2],
-            "class": c[2],
-            "namespace": c[2],
-            "number": c[3],
-            "enumMember": secondary,
-            "macro": c[5],
-            "operator": dim,
-        },
-    }
+    settings.pop("editor.tokenColorCustomizations", None)
+    settings.pop("editor.semanticTokenColorCustomizations", None)
 
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = settings_path.with_suffix(".json.tmp")

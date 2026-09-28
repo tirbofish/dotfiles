@@ -1,0 +1,14 @@
+[Unit]
+Description=Zeron native headless engine
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+ExecStart=%h/.zeron/app/current/zeron headless
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=-%h/.zeron/env
+
+[Install]
+WantedBy=default.target

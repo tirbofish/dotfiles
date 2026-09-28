@@ -1,18 +1,27 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Wayland
 import "../lib" as Lib
+import "grid.js" as Grid
 
-PanelWindow {
+// One widget card. All cards on a screen share a single DesktopLayer window,
+// so moving, resizing or toggling edit mode never resizes a Wayland surface.
+Item {
     id: win
 
     required property QtObject theme
-    required property var spec
+    required property var modelData
     required property string outputKey
+    readonly property var spec: modelData
 
     readonly property bool editing: Lib.WidgetService.editing
     readonly property bool selected: editing && Lib.WidgetService.selectedId === spec.id
+    readonly property var widgetSettings: {
+        var _ = Lib.WidgetService.settingsStamp
+        return spec && spec.settings ? spec.settings : ({})
+    }
+    readonly property real screenW: parent ? parent.width : 1920
+    readonly property real screenH: parent ? parent.height : 1080
     property int posX: spec ? spec.x : 0
     property int posY: spec ? spec.y : 0
     property int boxW: spec ? spec.w : 240
@@ -20,6 +29,8 @@ PanelWindow {
     property bool dragging: false
     property real grabX: 0
     property real grabY: 0
+    // Input region for the layer's mask.
+    property Region region: Region { item: chrome }
 
     function syncFromSpec() {
         if (!spec) return
@@ -28,14 +39,25 @@ PanelWindow {
         boxW = spec.w
         boxH = spec.h
     }
+    function clearFocus() { if (body.item && body.item.clearFocus) body.item.clearFocus() }
+    function setDragging(on) {
+        win.dragging = on
+        Lib.WidgetService.widgetDragging = on
+        if (win.parent) win.parent.dragCard = on ? win : null
+    }
 
-    Component.onCompleted: syncFromSpec()
+    // Transparent card: the visualiser floats straight on the wallpaper.
+    readonly property bool bare: spec && spec.type === "cava" && !editing
+    readonly property var snapped: Grid.snap(posX, posY, boxW, boxH, screenW, screenH)
+
+    Component.onCompleted: Qt.callLater(function() {
+        if (win.screenW > 0 && Lib.WidgetService.snapWidget(win.outputKey, win.spec.id, win.screenW, win.screenH))
+            win.syncFromSpec()
+    })
     onSpecChanged: syncFromSpec()
     onEditingChanged: {
-        if (win.editing)
-            win.capturingKeys = false
         if (!editing) {
-            dragging = false
+            if (dragging) setDragging(false)
             syncFromSpec()
         }
     }
@@ -43,30 +65,11 @@ PanelWindow {
         if (dragging) Lib.WidgetService.widgetDragging = false
     }
 
-    implicitWidth: win.boxW
-    implicitHeight: win.boxH
-    color: "transparent"
-    exclusiveZone: -1
-    property bool capturingKeys: false
-    aboveWindows: win.editing || win.capturingKeys
-    WlrLayershell.layer: win.editing ? WlrLayer.Overlay : (win.capturingKeys ? WlrLayer.Top : WlrLayer.Bottom)
-    WlrLayershell.namespace: "desktop-widget"
-    readonly property bool inputFocus: !win.editing && win.spec && (win.spec.type === "notes" || win.spec.type === "todo")
-    readonly property bool notesFocus: win.inputFocus
-    focusable: win.inputFocus
-    WlrLayershell.keyboardFocus: win.inputFocus ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-    readonly property bool windowActive: contentItem.window ? contentItem.window.active : false
-    onWindowActiveChanged: {
-        if (win.windowActive && win.inputFocus)
-            win.capturingKeys = true
-        else
-            win.capturingKeys = false
-        if (!windowActive && body.item && body.item.clearFocus) body.item.clearFocus()
-    }
-    // Keep the surface and coordinate system stable for the entire edit session.
-    anchors { left: true; top: true; right: win.editing; bottom: win.editing }
-    margins { left: win.editing ? 0 : win.posX; top: win.editing ? 0 : win.posY }
-    mask: Region { item: win.dragging ? stage : chrome }
+    x: posX
+    y: posY
+    width: boxW
+    height: boxH
+    z: dragging ? 10 : 0
 
     Item {
         id: stage
@@ -74,25 +77,31 @@ PanelWindow {
 
     Rectangle {
         id: chrome
-        x: win.editing ? win.posX : 0
-        y: win.editing ? win.posY : 0
         width: win.boxW
         height: win.boxH
         radius: win.theme.radiusOuter
-        color: "transparent"
-        border.width: win.selected ? 2 : 1
-        border.color: win.selected
-            ? win.theme.accent
-            : (win.theme.isDarkMode ? Qt.rgba(1, 1, 1, 0.08) : win.theme.outline)
+        color: win.bare ? "transparent" : win.theme.glassFill
+        border.width: win.bare ? 0 : (win.selected ? 2 : 1)
+        border.color: win.selected ? win.theme.accent : win.theme.glassHighlight
         clip: true
 
         Rectangle {
             z: -1
             anchors.fill: parent
-            anchors.topMargin: 8
+            anchors.topMargin: 6
             color: "black"
-            opacity: win.theme.isDarkMode ? 0.22 : 0.12
+            opacity: win.theme.isDarkMode ? 0.18 : 0.10
+            visible: !win.bare
             radius: parent.radius
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            visible: !win.bare
+            color: "transparent"
+            border.width: 1
+            border.color: win.theme.isDarkMode ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(1, 1, 1, 0.28)
         }
 
         Loader {
@@ -101,15 +110,20 @@ PanelWindow {
             sourceComponent: {
                 switch (win.spec.type) {
                 case "clock": return clockComp
+                case "worldclock": return worldClockComp
                 case "weather": return weatherComp
                 case "calendar": return calendarComp
                 case "media": return mediaComp
                 case "stats": return statsComp
                 case "notes": return notesComp
                 case "todo": return todoComp
+                case "pomodoro": return pomodoroComp
                 case "cava": return cavaComp
                 case "codexbar": return codexbarComp
                 case "progress": return progressComp
+                case "battery": return batteryComp
+                case "photos": return photosComp
+                case "voyager": return voyagerComp
                 default: return clockComp
                 }
             }
@@ -132,29 +146,27 @@ PanelWindow {
             z: 2
             onPressed: (ev) => {
                 Lib.WidgetService.selectedId = win.spec.id
-                var p = mapToItem(stage, ev.x, ev.y)
+                Lib.WidgetService.settingsOpen = false
+                var p = mapToItem(win.parent, ev.x, ev.y)
                 win.grabX = p.x - win.posX
                 win.grabY = p.y - win.posY
-                win.dragging = true
-                Lib.WidgetService.widgetDragging = true
+                win.setDragging(true)
             }
             onPositionChanged: (ev) => {
                 if (!pressed || !win.dragging) return
-                var p = mapToItem(stage, ev.x, ev.y)
-                win.posX = Math.round(Math.max(8, Math.min(win.screen.width - win.boxW - 8, p.x - win.grabX)))
-                win.posY = Math.round(Math.max(8, Math.min(win.screen.height - win.boxH - 8, p.y - win.grabY)))
+                var p = mapToItem(win.parent, ev.x, ev.y)
+                win.posX = Math.round(Math.max(0, Math.min(win.screenW - win.boxW, p.x - win.grabX)))
+                win.posY = Math.round(Math.max(0, Math.min(win.screenH - win.boxH, p.y - win.grabY)))
             }
             onReleased: {
                 Lib.WidgetService.moveWidget(
                     win.outputKey, win.spec.id, win.posX, win.posY,
-                    win.screen.width, win.screen.height)
-                win.dragging = false
-                Lib.WidgetService.widgetDragging = false
+                    win.screenW, win.screenH)
+                win.setDragging(false)
                 win.syncFromSpec()
             }
             onCanceled: {
-                win.dragging = false
-                Lib.WidgetService.widgetDragging = false
+                win.setDragging(false)
                 win.syncFromSpec()
             }
         }
@@ -187,6 +199,31 @@ PanelWindow {
         }
 
         Rectangle {
+            visible: win.selected
+            width: 22; height: 22; radius: 6
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 6
+            color: settingsMa.containsMouse ? win.theme.accent : "#c4c4c4"
+            z: 5
+            Text {
+                anchors.centerIn: parent
+                text: "󰒓"
+                font.family: win.theme.iconFont
+                font.pixelSize: 13
+                color: settingsMa.containsMouse ? win.theme.textOnAccent : "#3a3a3a"
+            }
+            MouseArea {
+                id: settingsMa
+                anchors.fill: parent
+                anchors.margins: -4
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: Lib.WidgetService.settingsOpen = !Lib.WidgetService.settingsOpen
+            }
+        }
+
+        Rectangle {
             visible: win.editing
             width: 22; height: 22; radius: 5
             anchors.right: parent.right
@@ -207,29 +244,26 @@ PanelWindow {
                     Lib.WidgetService.selectedId = win.spec.id
                     startW = win.boxW
                     startH = win.boxH
-                    var p = mapToItem(stage, ev.x, ev.y)
+                    var p = mapToItem(win.parent, ev.x, ev.y)
                     grabX = p.x
                     grabY = p.y
-                    win.dragging = true
-                    Lib.WidgetService.widgetDragging = true
+                    win.setDragging(true)
                 }
                 onPositionChanged: (ev) => {
                     if (!pressed || !win.dragging) return
-                    var p = mapToItem(stage, ev.x, ev.y)
-                    win.boxW = Math.max(140, Math.min(win.screen.width - win.posX - 8, startW + p.x - grabX))
-                    win.boxH = Math.max(72, Math.min(win.screen.height - win.posY - 8, startH + p.y - grabY))
+                    var p = mapToItem(win.parent, ev.x, ev.y)
+                    win.boxW = Math.max(Grid.span(1), Math.min(win.screenW - win.posX, startW + p.x - grabX))
+                    win.boxH = Math.max(Grid.span(1), Math.min(win.screenH - win.posY, startH + p.y - grabY))
                 }
                 onReleased: {
                     Lib.WidgetService.resizeWidget(
                         win.outputKey, win.spec.id, win.boxW, win.boxH,
-                        win.screen.width, win.screen.height)
-                    win.dragging = false
-                    Lib.WidgetService.widgetDragging = false
+                        win.screenW, win.screenH)
+                    win.setDragging(false)
                     win.syncFromSpec()
                 }
                 onCanceled: {
-                    win.dragging = false
-                    Lib.WidgetService.widgetDragging = false
+                    win.setDragging(false)
                     win.syncFromSpec()
                 }
             }
@@ -240,7 +274,18 @@ PanelWindow {
 
     Component {
         id: clockComp
-        ClockWidget { theme: win.theme }
+        ClockWidget {
+            theme: win.theme
+            hour24: win.widgetSettings.hour24 === undefined ? true : win.widgetSettings.hour24
+            showDate: win.widgetSettings.showDate === undefined ? true : win.widgetSettings.showDate
+        }
+    }
+    Component {
+        id: worldClockComp
+        WorldClockWidget {
+            theme: win.theme
+            cities: win.widgetSettings.cities || "Australia/Sydney, UTC, America/New_York, Asia/Tokyo"
+        }
     }
     Component {
         id: weatherComp
@@ -252,17 +297,20 @@ PanelWindow {
     }
     Component {
         id: mediaComp
-        MediaWidget { theme: win.theme }
+        MediaWidget {
+            theme: win.theme
+            showArtwork: win.widgetSettings.showArtwork === undefined ? true : win.widgetSettings.showArtwork
+        }
     }
     Component {
         id: statsComp
-        StatsWidget { theme: win.theme }
+        StatsWidget { theme: win.theme; refreshSeconds: Number(win.widgetSettings.interval || 2) }
     }
     Component {
         id: notesComp
         NotesWidget {
             theme: win.theme
-            text: (win.spec.settings && win.spec.settings.note) ? win.spec.settings.note : ""
+            text: win.widgetSettings.note || ""
             onNoteChanged: (t) => Lib.WidgetService.setSetting(win.outputKey, win.spec.id, "note", t)
         }
     }
@@ -270,8 +318,24 @@ PanelWindow {
         id: todoComp
         TodoWidget {
             theme: win.theme
-            items: (win.spec.settings && win.spec.settings.todos) ? win.spec.settings.todos : []
+            items: win.widgetSettings.todos || []
             onTodosChanged: (list) => Lib.WidgetService.setSetting(win.outputKey, win.spec.id, "todos", list)
+        }
+    }
+    Component {
+        id: pomodoroComp
+        PomodoroWidget {
+            theme: win.theme
+            sessionMin: Number(win.widgetSettings.sessionMin || 50)
+            active: !!win.widgetSettings.active
+            step: Number(win.widgetSettings.step || 0)
+            running: !!win.widgetSettings.running
+            endsAt: Number(win.widgetSettings.endsAt || 0)
+            remainingMs: win.widgetSettings.remainingMs === undefined ? -1 : Number(win.widgetSettings.remainingMs)
+            total: Number(win.widgetSettings.total || 0)
+            focusMin: Number(win.widgetSettings.focusMin || 0)
+            day: win.widgetSettings.day || ""
+            onSessionChanged: (s) => Lib.WidgetService.setSettings(win.outputKey, win.spec.id, s)
         }
     }
     Component {
@@ -285,5 +349,20 @@ PanelWindow {
     Component {
         id: progressComp
         ProgressWidget { theme: win.theme }
+    }
+    Component {
+        id: batteryComp
+        BatteryWidget {
+            theme: win.theme
+            showDetails: win.widgetSettings.showDetails === undefined ? true : win.widgetSettings.showDetails
+        }
+    }
+    Component {
+        id: voyagerComp
+        VoyagerWidget { theme: win.theme }
+    }
+    Component {
+        id: photosComp
+        PhotosWidget { theme: win.theme; rotationMinutes: Number(win.widgetSettings.interval || 5) }
     }
 }

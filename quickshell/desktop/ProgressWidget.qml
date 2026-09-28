@@ -22,7 +22,20 @@ Item {
         }
     }
 
+    WidgetLook { id: look; host: root }
+
+    Tile {
+        anchors.fill: parent
+        visible: look.small
+        theme: root.theme
+        icon: "󰔟"
+        value: root.items.length && root.items[0].total
+            ? Math.round(100 * root.items[0].current / root.items[0].total) + "%" : "—"
+        label: root.items.length ? (root.items[0].label || root.items[0].id) : "Progress"
+    }
+
     ColumnLayout {
+        visible: !look.small
         anchors.fill: parent
         anchors.margins: 14
         spacing: 8
@@ -134,6 +147,9 @@ Item {
 
             Text {
                 anchors.centerIn: parent
+                width: parent.width
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
                 visible: list.count === 0
                 text: "No progress bars · press +"
                 font.family: root.theme.textFont
