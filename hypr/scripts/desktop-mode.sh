@@ -25,7 +25,15 @@ current_mode() {
     local recorded=""
     [[ -f "$mode_file" ]] && recorded="$(<"$mode_file")"
     case "$recorded" in
-        mission) echo mission ;;
+        # The overview can close itself (click a window, Esc) without telling us,
+        # so only trust "mission" while it is actually running.
+        mission)
+            if mission_plugin_loaded || [[ -S "$overview_socket" ]]; then
+                echo mission
+            else
+                echo normal
+            fi
+            ;;
         hidden) echo hidden ;;
         *) echo normal ;;
     esac

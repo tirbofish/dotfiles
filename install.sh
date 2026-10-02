@@ -159,7 +159,7 @@ install_arch() {
 
     if [[ "$PROFILE" == "desktop" ]]; then
         packages+=(
-            hyprland hypridle hyprlock hyprpicker hyprpolkitagent quickshell
+            hyprland hyprpm hypridle hyprlock hyprpicker hyprpolkitagent quickshell
             awww dunst mako rofi nautilus mpv
             pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber
             pavucontrol pamixer networkmanager bluez bluez-utils blueman

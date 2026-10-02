@@ -40,5 +40,7 @@
   "idleSleepMin": 20,
   "codexbarTray": true,
   "codexbarRefreshSec": 90,
+  "petShown": false,
+  "petAgents": true,
   "currentTheme": "wallhaven-5ypy88"
 }

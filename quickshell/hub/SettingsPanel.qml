@@ -586,6 +586,20 @@ Item {
             }
 
             SCard {
+                visible: root.showCat("pet")
+                label: "Clawd"
+                Layout.columnSpan: 2; Layout.fillWidth: true
+
+                SToggle { label: "Show Clawd (Super+Shift+P)"
+                    checked: Lib.Configuration.petShown
+                    onToggled: (v) => { Lib.Configuration.petShown = v; Lib.Configuration.save() } }
+                SDivider {}
+                SToggle { label: "React to coding agents (Claude Code, Codex, opencode)"
+                    checked: Lib.Configuration.petAgents
+                    onToggled: (v) => { Lib.Configuration.petAgents = v; Lib.Configuration.save() } }
+            }
+
+            SCard {
                 visible: root.showCat("codexbar")
                 label: "CodexBar"
                 Layout.columnSpan: 2; Layout.fillWidth: true

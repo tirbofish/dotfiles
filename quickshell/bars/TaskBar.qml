@@ -204,7 +204,7 @@ PanelWindow {
             if (s === "Discharging" && cap <= 20) return 2000
             return 6000
         }
-        command: ["bash","-lc", `
+        command: ["bash","-c", `
             cap=$(cat /sys/class/power_supply/BAT*/capacity 2>/dev/null | head -n1)
             status=$(cat /sys/class/power_supply/BAT*/status 2>/dev/null | head -n1)
             ac=$(cat /sys/class/power_supply/AC*/online /sys/class/power_supply/ADP*/online 2>/dev/null | head -n1)

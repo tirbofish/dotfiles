@@ -148,7 +148,7 @@ PanelWindow {
             if (s === "Discharging" && cap <= 20) return 2000
             return 6000
         }
-        command: ["bash","-lc", `
+        command: ["bash","-c", `
             cap=$(cat /sys/class/power_supply/BAT*/capacity 2>/dev/null | head -n1)
             status=$(cat /sys/class/power_supply/BAT*/status 2>/dev/null | head -n1)
             ac=$(cat /sys/class/power_supply/AC*/online /sys/class/power_supply/ADP*/online 2>/dev/null | head -n1)
@@ -644,7 +644,7 @@ PanelWindow {
 
                 SequentialAnimation on iconScale {
                     running: Boolean(wifiConnected.value)
-                    loops: Animation.Infinite
+                    loops: 2  // pulse on connect, then rest (infinite = redraw every frame)
                     onRunningChanged: if (!running) wifiItem.iconScale = 1.0
                     NumberAnimation { to: 1.12; duration: 850; easing.type: Easing.InOutSine }
                     NumberAnimation { to: 1.0; duration: 850; easing.type: Easing.InOutSine }
@@ -686,7 +686,7 @@ PanelWindow {
 
                 SequentialAnimation on iconScale {
                     running: bluetoothConnections.value > 0
-                    loops: Animation.Infinite
+                    loops: 2  // pulse on connect, then rest (infinite = redraw every frame)
                     onRunningChanged: if (!running) bluetoothItem.iconScale = 1.0
                     NumberAnimation { to: 1.12; duration: 850; easing.type: Easing.InOutSine }
                     NumberAnimation { to: 1.0; duration: 850; easing.type: Easing.InOutSine }

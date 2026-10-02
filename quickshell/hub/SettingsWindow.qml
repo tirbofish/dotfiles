@@ -37,6 +37,7 @@ FloatingWindow {
         { id: "clipboard",  label: "Clipboard" },
         { id: "borders",    label: "Borders" },
         { id: "widgets",    label: "Widgets" },
+        { id: "pet",        label: "Clawd" },
         { id: "codexbar",   label: "CodexBar" },
         { id: "power",      label: "Power" },
         { id: "weather",    label: "Weather" },

@@ -68,6 +68,10 @@ Scope {
 
     // CodexBar
     property bool codexbarTray: true
+
+    // Clawd (pet/Pet.qml)
+    property bool petShown: true
+    property bool petAgents: true   // react to Claude Code / Codex / opencode hooks
     property int  codexbarRefreshSec: 300
 
     // Theme packs (~/.config/themes/<id>)
@@ -241,6 +245,7 @@ Scope {
         "clipboardMaxItems",
         "idleLockMin", "idleScreenOffMin", "idleSleepMin",
         "codexbarTray", "codexbarRefreshSec",
+        "petShown", "petAgents",
         "currentTheme"
     ]
     readonly property var persistHomeKeys: ["wallpaperDir", "profileImageOverride"]
@@ -330,9 +335,9 @@ Scope {
     function _flush() {
         root._lockIo()
         var full = root.snapshot(true)
-        configFile.setText(JSON.stringify(full))
+        configFile.setText(JSON.stringify(full, null, 2) + "\n")
         if (root.currentTheme && themeFile.path)
-            themeFile.setText(JSON.stringify(root.snapshot(false)))
+            themeFile.setText(JSON.stringify(root.snapshot(false), null, 2) + "\n")
         root._writeSideFiles()
     }
 
@@ -366,7 +371,7 @@ Scope {
         root._flush()
         root.currentTheme = id
         root._lockIo()
-        configFile.setText(JSON.stringify(root.snapshot(true)))
+        configFile.setText(JSON.stringify(root.snapshot(true), null, 2) + "\n")
         themeFile.reload()
     }
 

@@ -14,7 +14,7 @@ import "physics.js" as Phys
 PanelWindow {
     id: pet
 
-    property bool shown: true
+    readonly property bool shown: Lib.Configuration.petShown
     visible: shown
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
@@ -38,7 +38,8 @@ PanelWindow {
     function summon() {
         var focused = focusedScreen()
         if (pet.shown && focused && focused !== pet.screen) { pet.screen = focused; drop(); return }
-        pet.shown = !pet.shown
+        Lib.Configuration.petShown = !pet.shown
+        Lib.Configuration.save()
         if (pet.shown) drop()
     }
     function drop() {
@@ -159,6 +160,7 @@ PanelWindow {
     property string agentProject: ""
     property double agentSeen: 0
     function onAgent(line) {
+        if (!Lib.Configuration.petAgents) return
         var f = line.trim().split("\t")
         if (f.length < 2) return
         var was = agentState
@@ -173,6 +175,10 @@ PanelWindow {
             if (act === "sleep") return
             emote = ""; feel("happy", 2500); say("done ✻", 2500); doEmote("wave", 1600)
         }
+    }
+    Connections {
+        target: Lib.Configuration
+        function onPetAgentsChanged() { if (!Lib.Configuration.petAgents) pet.agentState = "" }
     }
     // Create the file first so the watch has something to hold on to.
     Process {

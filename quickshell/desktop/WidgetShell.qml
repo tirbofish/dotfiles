@@ -310,7 +310,7 @@ Item {
     }
     Component {
         id: statsComp
-        StatsWidget { theme: win.theme; refreshSeconds: Number(win.widgetSettings.interval || 2) }
+        StatsWidget { theme: win.theme; refreshSeconds: Number(win.widgetSettings.interval || 5) }
     }
     Component {
         id: notesComp

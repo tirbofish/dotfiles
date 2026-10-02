@@ -12,7 +12,12 @@ Scope {
     readonly property string configPath:
         Qt.resolvedUrl("../cava-bars.conf").toString().replace("file://", "")
 
+    property string lastLine: ""
+
     function applyLine(data) {
+        // Silence repeats the same all-zero line 30x/s; don't redraw the bars for it.
+        if (data === root.lastLine) return
+        root.lastLine = data
         var parts = String(data || "").trim().split(";")
         var out = []
         for (var i = 0; i < root.barCount; i++) {

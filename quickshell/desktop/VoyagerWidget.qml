@@ -15,6 +15,9 @@ Item {
     readonly property real cKmS: 299792.458
     readonly property var feed: poll.value || ({})
     property double now: Date.now()
+    // Animations repaint every frame, so only play them while hovered.
+    HoverHandler { id: hover }
+    readonly property bool animate: hover.hovered
 
     // [ms, AU, km/s] rows → where the probe is at `now`.
     function at(rows) {
@@ -54,7 +57,7 @@ Item {
         }
     }
     Timer {
-        interval: 100
+        interval: root.animate ? 100 : 1000
         running: root.visible && !!root.v1
         repeat: true
         onTriggered: root.now = Date.now()
@@ -154,7 +157,7 @@ Item {
                 width: 6; height: 6; radius: 3
                 color: poll.value && !poll.value.error ? "#4ade80" : root.theme.accentRed
                 SequentialAnimation on opacity {
-                    loops: Animation.Infinite
+                    loops: Animation.Infinite; running: root.animate; alwaysRunToEnd: true
                     NumberAnimation { to: 0.25; duration: 900 }
                     NumberAnimation { to: 1; duration: 900 }
                 }
@@ -281,8 +284,8 @@ Item {
                     color: "transparent"
                     border.width: 1
                     border.color: root.theme.accent
-                    NumberAnimation on width { loops: Animation.Infinite; from: 8; to: 34; duration: 2200; easing.type: Easing.OutCubic }
-                    NumberAnimation on opacity { loops: Animation.Infinite; from: 0.9; to: 0; duration: 2200; easing.type: Easing.OutCubic }
+                    NumberAnimation on width { loops: Animation.Infinite; running: root.animate; alwaysRunToEnd: true; from: 8; to: 34; duration: 2200; easing.type: Easing.OutCubic }
+                    NumberAnimation on opacity { loops: Animation.Infinite; running: root.animate; alwaysRunToEnd: true; from: 0.9; to: 0; duration: 2200; easing.type: Easing.OutCubic }
                 }
                 Rectangle { id: dot; x: -5; y: -4.5; width: 10; height: 10; radius: 5; color: root.theme.accent }
                 Text {
@@ -298,14 +301,14 @@ Item {
                 y: journey.mid - 1.5; width: 16; height: 4; radius: 2
                 color: root.theme.accentSlider2
                 NumberAnimation on x {
-                    loops: Animation.Infinite
+                    loops: Animation.Infinite; running: root.animate; alwaysRunToEnd: true
                     from: journey.xOf(1)
                     to: root.v1 ? journey.xOf(root.v1.au) - 16 : 0
                     duration: 5000
                     easing.type: Easing.InOutSine
                 }
                 SequentialAnimation on opacity {
-                    loops: Animation.Infinite
+                    loops: Animation.Infinite; running: root.animate; alwaysRunToEnd: true
                     NumberAnimation { from: 0; to: 0.9; duration: 600 }
                     PauseAnimation { duration: 3800 }
                     NumberAnimation { from: 0.9; to: 0; duration: 600 }

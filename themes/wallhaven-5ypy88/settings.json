@@ -39,5 +39,7 @@
   "idleScreenOffMin": 15,
   "idleSleepMin": 20,
   "codexbarTray": true,
-  "codexbarRefreshSec": 90
+  "codexbarRefreshSec": 90,
+  "petShown": false,
+  "petAgents": true
 }

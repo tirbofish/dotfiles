@@ -371,9 +371,18 @@ Scope {
         interval: 200
         onTriggered: root.refresh()
     }
-    // ponytail: 1.5s polling; use a stable PipeWire event API if lower hotplug latency matters.
+    // Refresh on device/default changes instead of re-parsing ~300 KB of pw-dump every 1.5s.
+    // Client events are ignored: pw-dump itself is a client and would loop.
+    Process {
+        running: true
+        command: ["pactl", "subscribe"]
+        stdout: SplitParser {
+            onRead: (line) => { if (/ on (sink|source|card|server) #/.test(line)) refreshTimer.restart() }
+        }
+    }
+    // Fallback in case pactl dies or misses something.
     Timer {
-        interval: 1500
+        interval: 30000
         repeat: true
         running: !root.pendingRoute && !root.pendingDefault
         onTriggered: root.refresh()
