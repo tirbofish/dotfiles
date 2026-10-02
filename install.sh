@@ -125,7 +125,7 @@ choose_profile() {
 
 install_arch_aur() {
     local yay_cmd build_dir
-    local packages=(auto-cpufreq grimblast-git snappy-switcher)
+    local packages=(auto-cpufreq grimblast-git snappy-switcher brave-origin-bin)
 
     if command -v yay >/dev/null 2>&1; then
         yay_cmd="$(command -v yay)"
@@ -160,7 +160,7 @@ install_arch() {
     if [[ "$PROFILE" == "desktop" ]]; then
         packages+=(
             hyprland hypridle hyprlock hyprpicker hyprpolkitagent quickshell
-            awww dunst mako rofi nautilus firefox mpv
+            awww dunst mako rofi nautilus mpv
             pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber
             pavucontrol pamixer networkmanager bluez bluez-utils blueman
             brightnessctl playerctl grim slurp swappy wl-clipboard libnotify
@@ -174,6 +174,8 @@ install_arch() {
     run sudo pacman -Syu --needed --noconfirm "${packages[@]}"
     if [[ "$PROFILE" == "desktop" ]]; then
         install_arch_aur
+        # On AC: performance platform profile (firmware ramps fans early) + turbo.
+        run sudo install -Dm644 "$ROOT/auto-cpufreq.conf" /etc/auto-cpufreq.conf
     fi
 }
 

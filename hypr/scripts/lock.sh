@@ -100,7 +100,8 @@ rm -f "$TRIGGER" "$DONE" "$STATUS"
 
 "$CAVA_LOCK" start >/dev/null 2>&1 || true
 
-hyprlock "${hyprlock_args[@]}" &
+mv -f "$RUNTIME/hyprlock.log" "$RUNTIME/hyprlock.prev.log" 2>/dev/null || true
+hyprlock --verbose "${hyprlock_args[@]}" >"$RUNTIME/hyprlock.log" 2>&1 &
 hyprlock_pid=$!
 
 stop_biopass() {

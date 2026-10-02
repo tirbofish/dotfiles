@@ -150,6 +150,45 @@ PanelWindow {
     }
     Timer { id: refreshSoon; interval: 60; onTriggered: pet.refresh() }
 
+    // ── coding agents ───────────────────────────────────────────────────
+    // Claude Code / Codex hooks and the opencode plugin call bin/clawd-agent,
+    // which writes "<agent>\t<work|ask|done|off>\t<project>" here.
+    readonly property string agentPath: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/clawd-agent"
+    property string agentState: ""
+    property string agentName: ""
+    property string agentProject: ""
+    property double agentSeen: 0
+    function onAgent(line) {
+        var f = line.trim().split("\t")
+        if (f.length < 2) return
+        var was = agentState
+        agentName = f[0]; agentState = f[1] === "off" ? "" : f[1]; agentProject = f[2] || ""; agentSeen = Date.now()
+        if (agentState === was && agentState !== "ask") return
+        if (bubbleUntil > Date.now() + 60000) bubble = ""      // drop a lingering "needs you"
+        if (agentState === "work") { wake(); doEmote("think", 5000) }
+        else if (agentState === "ask") {
+            wake(); feel("surprised", 1500); say(agentName + " needs you!", 600000); doEmote("wave", 2500)
+            if (mode === "ground") vy = -420, mode = "air"
+        } else if (agentState === "done") {
+            if (act === "sleep") return
+            emote = ""; feel("happy", 2500); say("done ✻", 2500); doEmote("wave", 1600)
+        }
+    }
+    // Create the file first so the watch has something to hold on to.
+    Process {
+        running: true
+        command: ["touch", pet.agentPath]
+        onExited: agentFile.path = pet.agentPath
+    }
+    FileView {
+        id: agentFile
+        property bool primed: false                   // ignore whatever was there at startup
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: { if (primed) pet.onAgent(text()); primed = true }
+    }
+
     // ── body state ──────────────────────────────────────────────────────
     property real px: width / 2       // feet, centre
     property real py: 0
@@ -162,6 +201,7 @@ PanelWindow {
     property int dir: 1
     property bool following: false
     property double lastPet: Date.now()
+    property double awakeSince: Date.now()
     property string wantWindow: ""
     property string mood: "normal"
     property double moodUntil: 0
@@ -184,6 +224,7 @@ PanelWindow {
         var cls = activeClass.toLowerCase()
         var opts = []
         if (fest) opts.push(fest, fest, fest)
+        if (agentState === "work") opts.push("coding", "coding", "coding", "coding")
         if (musicPlaying) opts.push("listening", "listening", "singing")
         if (/code|cursor|zed|nvim|neovide|kitty|alacritty|foot|wezterm|ghostty|jetbrains/.test(cls)) opts.push("coding", "coding")
         if (/steam|lutris|minecraft|heroic|gamescope|prism/.test(cls)) opts.push("gaming", "gaming")
@@ -219,6 +260,7 @@ PanelWindow {
     function say(t, ms) { bubble = t; bubbleUntil = Date.now() + ms }
     function wake() {
         if (act !== "sleep") return
+        awakeSince = Date.now()
         act = "idle"; actUntil = Date.now() + 800
         mood = "normal"; bubble = ""
     }
@@ -243,8 +285,12 @@ PanelWindow {
     function choose() {
         var now = Date.now()
         var hour = new Date().getHours()
+        // Naps have to be earned: a good stretch awake first, then only a
+        // modest chance per decision (higher at night or when ignored).
+        var night = hour >= 23 || hour < 6
         var lonely = now - lastPet > 180000
-        var sleepy = (hour >= 23 || hour < 6) ? 0.45 : lonely ? 0.3 : 0.1
+        var rested = now - awakeSince < (night ? 360000 : 720000)
+        var sleepy = rested ? 0 : night ? 0.2 : lonely ? 0.1 : 0.03
         var r = Math.random()
         if (following) { act = "follow"; actUntil = now + 1000; return }
         if (r < sleepy) { act = "sleep"; mood = "sleep"; actUntil = now + 120000 + Math.random() * 240000; return }
@@ -334,6 +380,9 @@ PanelWindow {
             if (pet.mode === "ground" && !pet.moving) pet.step(0)
             if (pet.mode === "ground" && now > pet.actUntil && pet.act !== "sleep") pet.choose()
             if (pet.act === "sleep" && now > pet.actUntil) pet.wake()
+            // Keep thinking while an agent works; give up if it went quiet (killed mid-turn).
+            if (pet.agentState === "work" && now - pet.agentSeen > 300000) pet.agentState = ""
+            if (pet.agentState === "work" && !pet.emote && !pet.gif) pet.doEmote("think", 5000)
         }
     }
     Component.onCompleted: {
@@ -464,7 +513,9 @@ PanelWindow {
             id: bubbleText
             anchors.centerIn: parent
             text: pet.emote === "think" && !pet.bubble
-                ? pet.spinner[pet.spin] + "  " + pet.verb : pet.bubble
+                ? pet.spinner[pet.spin] + "  " + pet.verb
+                  + (pet.agentState === "work" && pet.agentProject ? "  · " + pet.agentProject : "")
+                : pet.bubble
             font.family: "DejaVu Sans"
             font.pixelSize: 12
             font.weight: 800

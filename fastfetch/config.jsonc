@@ -3,7 +3,7 @@
   "logo": {
     "type": "kitty",
     "source": "~/.local/state/theme/fastfetch_logo",
-    "recache": true,
+    "cache": "regen",
     "height": 10,
     "padding": {
       "top": 1,

@@ -5,7 +5,7 @@
   "barShowTray": true,
   "barHeight": 50,
   "iconSize": 24,
-  "barCavaOpacity": 0.3,
+  "barCavaOpacity": 0.5,
   "showScreenBorders": true,
   "desktopMode": "tirbofish",
   "wallpaperDir": "$HOME/Pictures/Wallpapers",
@@ -39,5 +39,5 @@
   "idleScreenOffMin": 15,
   "idleSleepMin": 20,
   "codexbarTray": true,
-  "codexbarRefreshSec": 300
+  "codexbarRefreshSec": 90
 }

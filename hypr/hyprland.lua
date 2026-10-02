@@ -191,6 +191,8 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("dunst")
     hl.exec_cmd(scripts .. "/clipboard-history.sh boot")
     hl.exec_cmd("blueman-applet")
+    hl.exec_cmd("/usr/lib/kdeconnectd")
+    hl.exec_cmd("kdeconnect-indicator")
     hl.exec_cmd("pgrep -f bt-audio-agent.py >/dev/null || " .. scripts .. "/bt-audio-agent.py")
     -- hyprpolkitagent if you have it, polkit-gnome otherwise
     hl.exec_cmd("systemctl --user start hyprpolkitagent 2>/dev/null || /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")
@@ -579,7 +581,7 @@ hl.bind(mod .. " + SHIFT + W", hl.dsp.global("quickshell:widgetEdit")) -- Deskto
 hl.bind(mod .. " + Q", hl.dsp.exec_cmd("kitty"))
 hl.bind(mod .. " + E", hl.dsp.exec_cmd("nautilus"))
 -- hl.bind(mod .. " + R", hl.dsp.exec_cmd(home .. "/.config/rofi/rofi_wide.sh")) -- if you prefer rofi
-hl.bind(mod .. " + B", hl.dsp.exec_cmd("firefox"))
+hl.bind(mod .. " + B", hl.dsp.exec_cmd("brave-origin"))
 hl.bind(mod .. " + S", hl.dsp.exec_cmd("lens --no-decorations --sniper"))
 hl.bind(mod .. " + P", hl.dsp.exec_cmd("hyprpicker -a"))
 hl.bind(mod .. " + SHIFT + P", hl.dsp.global("quickshell:petToggle"), { description = "Summon / hide Clawd (desktop pet)" })

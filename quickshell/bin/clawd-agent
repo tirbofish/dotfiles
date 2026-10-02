@@ -1,0 +1,5 @@
+#!/bin/sh
+# Coding-agent hooks -> Clawd (quickshell/pet). Usage: clawd-agent <agent> <work|ask|done|off>
+# with the hook's JSON on stdin. Last event from any agent wins.
+cwd=$(jq -r '.cwd // empty' 2>/dev/null)
+printf '%s\t%s\t%s\n' "$1" "$2" "$(basename "${cwd:-$PWD}")" > "${XDG_RUNTIME_DIR:-/tmp}/clawd-agent"
