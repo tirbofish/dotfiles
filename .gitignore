@@ -102,3 +102,5 @@
 /systemd/user/rclone-zimaos.service
 /systemd/user/codex-router.service
 /systemd/user/antigravity-cli-daemon.service
+hypr/backups/
+**/*.before-*
