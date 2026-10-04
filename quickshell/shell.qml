@@ -7,10 +7,10 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import "lib" as Lib
 import "bars" as Bars
-import "dock" as Dock
 import "desktop" as Desktop
 import "hub" as SystemHub
 import "pet" as PetMod
+import "dock" as DockMod
 
 ShellRoot {
     // Keep persisted pointer settings applied even before the settings page opens.
@@ -46,6 +46,8 @@ ShellRoot {
     }
 
     PetMod.Pet { id: mochiPet }
+
+    DockMod.DockHost {}
     GlobalShortcut {
         name: "petToggle"
         description: "Summon or hide Clawd, the desktop pet"
@@ -64,17 +66,8 @@ ShellRoot {
             id: v
             property var modelData
 
-            readonly property bool topStyle: Lib.Configuration.barStyle === "top"
-
             Lib.ThemeEngine {
                 id: screenTheme
-            }
-
-            Desktop.ScreenBorder {
-                id: border
-                screen: v.modelData
-                visible: !v.topStyle
-                theme: screenTheme
             }
 
             LazyLoader {
@@ -108,24 +101,7 @@ ShellRoot {
             Loader {
                 id: barLoader
                 active: Lib.Configuration.ready
-                sourceComponent: v.topStyle ? topBarComponent : taskBarComponent
-            }
-
-            Component {
-                id: taskBarComponent
-                Bars.TaskBar {
-                    screen: v.modelData
-                    onHasWindowsChanged: border.setTopSidesVisible(!hasWindows)
-                    onLauncherClicked: isDockMode ? appDrawer.toggle() : wideDrawer.toggle()
-                    onRequestHubToggle: v.toggleHub()
-                    onRequestHubBattery: v.openHubBattery()
-                }
-            }
-
-            // The top bar keeps rofi as its launcher, so the dock drawers stay unused
-            Component {
-                id: topBarComponent
-                Bars.TopBar {
+                sourceComponent: Bars.TopBar {
                     screen: v.modelData
                     onRequestHubToggle: v.toggleHub()
                     onRequestHubBattery: v.openHubBattery()
@@ -193,16 +169,6 @@ ShellRoot {
                 screen: v.modelData
             }
 
-            Dock.Drawer {
-                id: appDrawer
-                isDarkMode: screenTheme.isDarkMode
-            }
-
-            Dock.WideDrawer {
-                id: wideDrawer
-                theme: screenTheme
-            }
-
             function toggleHub() {
                 if (hubWindow.visible) {
                     // Route through closeAll() so the exit animation plays before hiding
@@ -226,15 +192,11 @@ ShellRoot {
                 onPressed: v.toggleHub()
             }
 
-            // rofi is the launcher in top style, so this only binds for the taskbar
             GlobalShortcut {
                 name: "drawerToggle"
-                description: "Toggle app drawer"
-                onPressed: {
-                    if (v.topStyle) Quickshell.execDetached(["bash", "-c",
-                        "pkill -x rofi || ~/.config/rofi/launcher.sh"])
-                    else wideDrawer.toggle()
-                }
+                description: "Toggle app launcher"
+                onPressed: Quickshell.execDetached(["bash", "-c",
+                    "pkill -x rofi || ~/.config/rofi/launcher.sh"])
             }
 
             // Picker if an unconfigured screen is waiting, otherwise the hub panel

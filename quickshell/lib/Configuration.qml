@@ -16,15 +16,12 @@ Scope {
     // Settings from disk a beat after startup;
     property bool ready: false
 
-    property string barStyle:              "task"
-    property bool   barForceWorkspaceMode: false
     property bool   barShowBattery:        true
     property bool   barShowTray:           true
     property int    barHeight:             50
     property int    iconSize:              24
 
     // Desktop
-    property bool   showScreenBorders: true
     property string desktopMode:       "tirbofish"
     property string wallpaperDir:      Quickshell.env("HOME") + "/Pictures/Wallpapers"
 
@@ -48,19 +45,7 @@ Scope {
     property string weatherLat:    ""
     property string weatherLon:    ""
 
-    // Screen borders
-    property int    borderThickness:    7
-    property color  borderFrameColor:   "#141719"
-    property bool   bordersEnabled:     true
-    property bool   bordersForceVisible: false
-    property bool   borderUseCustomColor: false
-
-    // Taskbar
-    property int    taskbarExclusiveZone:      53
-    property bool   taskbarForceDockMode:      false
-    property bool   taskbarForceWorkspaceMode: false
-    property bool   taskbarCustomBg:           false
-    property color  taskbarCustomBgColor:      "#141719"
+    // Bar accent (key name kept so saved settings still load)
     property color  taskbarAccent:             customAccent
 
     // Profile
@@ -228,16 +213,13 @@ Scope {
 
     // Persistence — every user-facing setting goes through this list.
     readonly property var persistKeys: [
-        "barStyle", "barForceWorkspaceMode", "barShowBattery", "barShowTray",
+        "barShowBattery", "barShowTray",
         "barHeight", "iconSize", "barCavaOpacity",
-        "showScreenBorders", "desktopMode", "wallpaperDir",
+        "desktopMode", "wallpaperDir",
         "maxEvents", "useCustomColors", "customAccent", "customBg",
         "customForeground", "customSecondary", "customDanger",
         "currentShader",
-        "borderThickness", "borderFrameColor", "bordersEnabled",
-        "bordersForceVisible", "borderUseCustomColor",
-        "taskbarExclusiveZone", "taskbarForceDockMode", "taskbarForceWorkspaceMode",
-        "taskbarCustomBg", "taskbarCustomBgColor", "taskbarAccent",
+        "taskbarAccent",
         "profileImageOverride",
         "powerMenuStyle",
         "powerMenuLifeDark", "powerMenuLifeLight",
@@ -251,7 +233,7 @@ Scope {
     readonly property var persistHomeKeys: ["wallpaperDir", "profileImageOverride"]
     readonly property var persistColorKeys: [
         "customAccent", "customBg", "customForeground", "customSecondary", "customDanger",
-        "borderFrameColor", "taskbarCustomBgColor", "taskbarAccent",
+        "taskbarAccent",
         "powerMenuLifeDark", "powerMenuLifeLight",
         "powerMenuCassiniDark", "powerMenuCassiniLight"
     ]

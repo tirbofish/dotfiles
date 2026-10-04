@@ -120,7 +120,7 @@ hl.env("ELECTRON_OZONE_PLATFORM_HINT", "wayland")
 -- })
 -- END installer-managed monitors
 -- Saved layouts (desc: selectors) live in ~/.config/quickshell/lib/monitors.json.
--- Pyprland plus the apply script retry 0x0 MST hotplugs; do not name DP-*.
+-- The apply script retries 0x0 MST hotplugs; do not name DP-*.
 persist.apply_monitors()
 
 local function set_wallpapers()
@@ -178,12 +178,17 @@ local function apply_input_devices()
 end
 
 hl.on("hyprland.start", function()
+    -- Keep the system app preference aligned with the saved mode (dark by default).
+    hl.exec_cmd("gsettings set org.gnome.desktop.interface color-scheme prefer-" .. theme_mode())
     hl.exec_cmd("hyprpm reload")
     hl.exec_cmd("hyprctl plugin list | grep -q hypr-minimize || hyprctl plugin load " .. home .. "/.config/hypr/plugins/hypr-minimize/hypr-minimize.so")
     hl.exec_cmd("qs")
-    hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE && systemctl --user stop kanshi.service; systemctl --user restart pyprland.service")
+    -- Hyprland's monitor events run the lid-aware apply script. Retire the
+    -- second layout writer, which otherwise re-enables a closed laptop panel.
+    hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE && systemctl --user stop kanshi.service pyprland.service")
     hl.exec_cmd("awww-daemon")
     hl.exec_cmd(scripts .. "/idle.sh apply")
+    hl.exec_cmd("systemctl --user start hypr-music-guard.service")
     hl.exec_cmd(vicinae .. " server --replace")
     -- logind's default HandlePowerKey=poweroff wins unless we inhibit it.
     hl.exec_cmd("systemctl --user start hypr-power-key-lock.service")
@@ -471,7 +476,8 @@ hl.config({
         disable_hyprland_logo    = true,
         disable_splash_rendering = true,
         force_default_wallpaper  = 0,
-        animate_manual_resizes   = true
+        animate_manual_resizes   = true,
+        focus_on_activate        = true
     },
     gestures = {
         workspace_swipe_use_r   = false,
@@ -567,6 +573,8 @@ hl.on("config.reloaded", workspace_float.sync)
 hl.layer_rule({ match = { namespace = "snappy-switcher" }, blur = true, ignore_alpha = 0.01 })
 hl.layer_rule({ match = { namespace = "notifications" }, blur = true, ignore_alpha = 0.2 })
 hl.layer_rule({ match = { namespace = "desktop-widget" }, blur = true, ignore_alpha = 0.2 })
+hl.layer_rule({ match = { namespace = "hyprland-dock" }, blur = true, ignore_alpha = 0.2 })
+hl.layer_rule({ match = { namespace = "dock-genie" }, no_anim = true })
 
 -- =========================================================================
 -- Keybindings
@@ -602,7 +610,6 @@ hl.bind(mod .. " + " .. alt .. " + F", function()
     hl.dispatch(hl.dsp.window.center())
     workspace_float.schedule()
 end)
-local float_max_saved = {}
 local float_l_saved = {}
 local last_float_geom = {}
 local function reserved_sides(r)
@@ -676,7 +683,6 @@ hl.on("window.close", function(win)
     if not a then return end
     last_float_geom[a] = nil
     float_l_saved[a] = nil
-    float_max_saved[a] = nil
 end)
 hl.bind(mod .. " + F", function()
     local win = hl.get_active_window()
@@ -714,32 +720,92 @@ hl.bind(mod .. " + SHIFT + F", function()
         end, { timeout = 80, type = "oneshot" })
     end
 end, { description = "Toggle workspace / tiled mode" })
-hl.bind(mod .. " + M", function()
-    local win = hl.get_active_window()
-    if not win then return end
-    if win.floating then
-        local area = monitor_work_area()
-        if not area or area.w < 50 or area.h < 50 then return end
-        local addr = tostring(win.address)
+-- Maximize covers the whole screen, top bar included (macOS-style).
+hl.bind(mod .. " + M", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }), { description = "Maximize" })
+-- Observe clicks without consuming them. Only act when the app also requests
+-- maximize: its title bar knows which areas are draggable, tabs, or buttons.
+-- Double-click zoom is a normal floating resize, with the top bar visible;
+-- keeping the client unmaximized lets its maximize button still go fullscreen.
+local titlebar_click, titlebar_double_click
+local float_zoom_saved = {}
+local function observe_titlebar_click()
+    local pos = hl.get_cursor_pos()
+    if not pos then return end
+    local px, py = pos.x or pos[1], pos.y or pos[2]
+    if not px or not py then return end
+    local previous = titlebar_click
+    titlebar_click, titlebar_double_click = nil, nil
+    if previous and math.abs(px - previous.x) <= 6 and math.abs(py - previous.y) <= 6 then
+        local win = hl.get_active_window()
+        if not win then return end
         local g = window_geom(win)
-        local filled = math.abs(g.x - area.x) <= 10 and math.abs(g.y - area.y) <= 10
-            and math.abs(g.w - area.w) <= 20 and math.abs(g.h - area.h) <= 20
-        if filled and float_max_saved[addr] then
-            local prev = float_max_saved[addr]
-            place_floating(prev.x, prev.y, prev.w, prev.h)
-            float_max_saved[addr] = nil
-        else
-            float_max_saved[addr] = g
-            place_floating(area.x, area.y, area.w, area.h)
-        end
+        if px < g.x or py < g.y or px >= g.x + g.w or py >= g.y + g.h then return end
+        local click = { address = tostring(win.address), floating = win.floating,
+            geom = g, fullscreen = tonumber(win.fullscreen) or 0 }
+        titlebar_double_click = click
+        hl.timer(function()
+            if titlebar_double_click == click then titlebar_double_click = nil end
+        end, { timeout = 500, type = "oneshot" })
+    else
+        local click = { x = px, y = py }
+        titlebar_click = click
+        hl.timer(function()
+            if titlebar_click == click then titlebar_click = nil end
+        end, { timeout = 500, type = "oneshot" })
+    end
+end
+local function same_float_geom(a, b)
+    return math.abs(a.x - b.x) <= 10 and math.abs(a.y - b.y) <= 10
+        and math.abs(a.w - b.w) <= 20 and math.abs(a.h - b.h) <= 20
+end
+local function zoom_floating_window(win, click)
+    local sel = window_selector(win)
+    -- Undo the app's maximize before resizing, also for tiled double-clicks.
+    hl.dispatch(hl.dsp.window.fullscreen_state({ internal = 0, client = 0, action = "set", window = sel }))
+    if not click.floating or not win.floating or click.fullscreen ~= 0 then return end
+    local area = monitor_work_area(win.monitor)
+    if not area or area.w < 50 or area.h < 50 then return end
+    local addr = tostring(win.address)
+    local saved = float_zoom_saved[addr]
+    if saved and same_float_geom(click.geom, saved.area) then
+        local prev = saved.geom
+        place_floating(prev.x, prev.y, prev.w, prev.h, win)
+        float_zoom_saved[addr] = nil
+    else
+        float_zoom_saved[addr] = { geom = click.geom, area = area }
+        place_floating(area.x, area.y, area.w, area.h, win)
+    end
+end
+-- A single maximize-button click still enters fullscreen. Keep the existing
+-- client-maximized state separate from compositor fullscreen.
+-- Requests in a window's first seconds are apps restoring a remembered state
+-- at launch (kitty, browsers); those stay a plain maximize.
+local opened_at = {}
+hl.on("window.open", function(win) if win then opened_at[tostring(win.address)] = os.time() end end)
+hl.on("window.close", function(win)
+    if not win then return end
+    local addr = tostring(win.address)
+    opened_at[addr], float_zoom_saved[addr] = nil, nil
+    if titlebar_double_click and titlebar_double_click.address == addr then titlebar_double_click = nil end
+end)
+-- Newly opened windows take focus (pets and hyprfloat helpers excepted).
+hl.on("window.open", function(win)
+    if not win or (win.class or "") == "xpet" or (win.title or ""):find("^hyprfloat:") then return end
+    local sel = window_selector(win)
+    if sel then hl.dispatch(hl.dsp.focus({ window = sel })) end
+end)
+hl.on("window.fullscreen", function(win)
+    if not win or tonumber(win.fullscreen) ~= 1 then return end
+    local click = titlebar_double_click
+    if click and click.address == tostring(win.address) then
+        titlebar_double_click = nil
+        zoom_floating_window(win, click)
         return
     end
-    hl.dispatch(hl.dsp.window.fullscreen({
-        mode = "maximized",
-        action = "toggle",
-        layout_aware = false,
-    }))
-end, { description = "Maximize" })
+    if os.time() - (opened_at[tostring(win.address)] or 0) < 2 then return end
+    hl.dispatch(hl.dsp.window.fullscreen_state({ internal = 2, client = 1, action = "set", window = window_selector(win) }))
+end)
+
 -- hl.bind(mod .. " + P", hl.dsp.window.pseudo())
 hl.bind(mod .. " + SHIFT + DOWN", hl.dsp.layout("togglesplit"))
 hl.bind(mod .. " + SHIFT + UP",   hl.dsp.layout("togglesplit"))
@@ -818,6 +884,7 @@ local function window_contains(win, px, py)
     return px >= x and py >= y and px < x + w and py < y + h
 end
 hl.bind("mouse:272", function()
+    observe_titlebar_click()
     local addrs = hidden_window_addresses()
     if not addrs then return end
     local pos = hl.get_cursor_pos()
@@ -831,7 +898,7 @@ hl.bind("mouse:272", function()
             return
         end
     end
-end, { non_consuming = true, description = "Restore desktop from peeked window" })
+end, { non_consuming = true, description = "Floating title-bar zoom / restore desktop from peeked window" })
 
 hl.bind(mod .. " + " .. alt .. " + F4", hl.dsp.exec_cmd("hyprctl dispatch 'hl.dsp.exit()'"))
 hl.bind(alt .. " + F4", hl.dsp.exec_cmd("hyprctl layers | grep -q power-menu || quickshell -p ~/.config/quickshell/utils/PowerMenu.qml"))
@@ -936,6 +1003,15 @@ hl.bind(mod .. " + O",             hl.dsp.exec_cmd(scripts .. "/screenshot.sh m"
 -- =========================================================================
 -- Workspace Binds
 -- =========================================================================
+-- Exchange visible workspaces with the next connected display.
+hl.bind(mod .. " + SHIFT + M", function()
+    local current = hl.get_active_monitor()
+    local other = hl.get_monitor("+1")
+    if not current or not other or current.name == other.name then return end
+    hl.dispatch(hl.dsp.workspace.swap_monitors({ monitor1 = current.name, monitor2 = other.name }))
+    schedule_workspace_span()
+end, { description = "Swap workspace with next display" })
+
 for i = 1, 10 do
     hl.bind(mod .. " + " .. tostring(i % 10), function()
         local mon = hl.get_active_monitor()
@@ -947,6 +1023,23 @@ for i = 1, 10 do
         local slots = mon and workspace_slots[mon.name]
         if slots and slots[i] then hl.dispatch(hl.dsp.window.move({ workspace = slots[i] })) end
     end)
+    -- Swap every window on the current workspace with those on slot i.
+    -- ponytail: tiled layout is rebuilt in window order, not the exact dwindle tree.
+    hl.bind(mod .. " + CTRL + " .. tostring(i % 10), function()
+        local mon = hl.get_active_monitor()
+        local slots = mon and workspace_slots[mon.name]
+        local cur = mon and mon.active_workspace and mon.active_workspace.id
+        local other = slots and slots[i]
+        if not cur or not other or other == cur then return end
+        local mine, theirs = {}, {}
+        for _, w in ipairs(hl.get_windows() or {}) do
+            local id = workspace_id_of(w)
+            if id == cur then mine[#mine + 1] = window_selector(w)
+            elseif id == other then theirs[#theirs + 1] = window_selector(w) end
+        end
+        for _, sel in ipairs(mine) do hl.dispatch(hl.dsp.window.move({ workspace = other, follow = false, window = sel })) end
+        for _, sel in ipairs(theirs) do hl.dispatch(hl.dsp.window.move({ workspace = cur, follow = false, window = sel })) end
+    end, { description = "Swap workspace contents with slot " .. i })
 end
 
 -- =========================================================================
@@ -959,21 +1052,34 @@ hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true })
 -- Lid Switch
 -- =========================================================================
 -- switch:off = lid OPEN, switch:on = lid CLOSED
--- No monitor block here. The installer regenerates every
--- monitor block in this file and would take these two with it.
--- "preferred,auto" re-reads the panel instead of repeating the mode above, so
--- this keeps working whatever the monitor section ends up saying.
-hl.bind("switch:off:Lid Switch", function()
-    set_touchscreen_enabled(true)
+-- Use the saved description rules for both states so reopening clears the
+-- same rule that disabled the panel. Config reloads also check the lid state.
+local last_lid_closed = lid_closed()
+
+local function apply_lid_state(closed)
+    last_lid_closed = closed
+    set_touchscreen_enabled(not closed)
+    persist.apply_monitors(closed)
     hl.exec_cmd(scripts .. "/pypr-apply-monitors.py")
-    set_wallpapers_delayed()
-    hl.exec_cmd(scripts .. "/lock.sh --lid-open")
+    if not closed then
+        set_wallpapers_delayed()
+        hl.exec_cmd(scripts .. "/lock.sh --lid-open")
+    end
+end
+
+hl.bind("switch:off:Lid Switch", function()
+    apply_lid_state(false)
+end, { locked = true })
+hl.bind("switch:on:Lid Switch", function()
+    apply_lid_state(true)
 end, { locked = true })
 
-hl.bind("switch:on:Lid Switch", function()
-    set_touchscreen_enabled(false)
-    hl.monitor({ output = "eDP-1", disabled = true })
-end, { locked = true })
+-- ACPI state can lag a switch event, and libinput can miss the opening edge.
+-- Check for transitions without overwriting manual display choices each tick.
+hl.timer(function()
+    local closed = lid_closed()
+    if closed ~= last_lid_closed then apply_lid_state(closed) end
+end, { timeout = 500, type = "repeat" })
 
 -- =========================================================================
 -- Window Rules
@@ -1024,6 +1130,48 @@ hl.window_rule({ match = { title = "^(Save As)(.*)$" }, size = "900 600" })
 hl.window_rule({ match = { title = "^(File Upload)(.*)$" }, size = "900 600" })
 hl.window_rule({ match = { title = "^(Confirm to replace files)$" }, size = "500 300" })
 hl.window_rule({ match = { title = "^(File Operation Progress)(.*)$" }, size = "500 300" })
+-- XWayland and Chromium/Electron/CEF apps scroll far faster than native ones.
+-- Detected on open by the V8 snapshot shipped next to their binary; the
+-- rule is rebuilt over every class seen. Quickshell's Settings > Touchpad
+-- slider calls set_electron_scroll() through hyprctl eval.
+-- ponytail: binary sniffing misses sandboxed (flatpak) paths; add classes to chromium_classes by hand then.
+local electron_scroll = input.electron_scroll or 0.4
+local chromium_classes = {}
+local function apply_electron_scroll()
+    hl.window_rule({ name = "xwayland-scroll", match = { xwayland = true },
+        scroll_touchpad = electron_scroll })
+    local names = {}
+    for c in pairs(chromium_classes) do names[#names + 1] = c:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?|\\]", "\\%0") end
+    if #names == 0 then return end
+    hl.window_rule({ name = "electron-scroll", match = { class = "^(" .. table.concat(names, "|") .. ")$" },
+        scroll_touchpad = electron_scroll })
+end
+function set_electron_scroll(v)
+    electron_scroll = tonumber(v) or electron_scroll
+    apply_electron_scroll()
+end
+local function is_chromium(pid)
+    if not pid or pid <= 0 then return false end
+    local p = io.popen("readlink /proc/" .. math.floor(pid) .. "/exe 2>/dev/null")
+    local exe = p and p:read("l")
+    if p then p:close() end
+    local dir = exe and exe:match("^(.*)/[^/]*$")
+    if not dir then return false end
+    for _, f in ipairs({ "v8_context_snapshot.bin", "snapshot_blob.bin" }) do
+        local h = io.open(dir .. "/" .. f, "r")
+        if h then h:close() return true end
+    end
+    return false
+end
+local function track_chromium(win)
+    local class = win and win.class
+    if not class or class == "" or chromium_classes[class] ~= nil then return end
+    chromium_classes[class] = is_chromium(win.pid) or nil
+    if chromium_classes[class] then apply_electron_scroll() end
+end
+hl.on("window.open", track_chromium)
+for _, w in ipairs(hl.get_windows() or {}) do track_chromium(w) end
+apply_electron_scroll()
 hl.window_rule({ match = { title = "^(Rename)(.*)$" }, size = "450 200" })
 hl.window_rule({ match = { title = "^(Create New Folder)$" }, size = "450 200" })
 hl.window_rule({ match = { title = "^(Properties)$" }, size = "500 600" })

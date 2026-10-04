@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep music awake and pause on audio output changes
+After=pipewire-pulse.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.config/hypr/scripts/music-guard.py watch
+Restart=always
+RestartSec=2
+

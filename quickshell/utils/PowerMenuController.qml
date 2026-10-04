@@ -160,7 +160,7 @@ FocusScope {
     function run(cmd) {
         close(function() {
             if (cmd === "lock") Quickshell.execDetached([Quickshell.env("HOME") + "/.config/hypr/scripts/lock.sh"])
-            if (cmd === "suspend") Quickshell.execDetached(["systemctl", "suspend"])
+            if (cmd === "suspend") Quickshell.execDetached(["python3", Quickshell.env("HOME") + "/.config/hypr/scripts/music-guard.py", "sleep"])
             if (cmd === "logout") Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.exit()"])
             if (cmd === "reboot") Quickshell.execDetached(["systemctl", "reboot"])
             if (cmd === "shutdown") Quickshell.execDetached(["systemctl", "poweroff"])

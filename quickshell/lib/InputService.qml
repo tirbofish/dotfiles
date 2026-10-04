@@ -15,6 +15,7 @@ Scope {
     property bool touchpadNaturalScroll: true
     property bool touchpadTapToClick: true
     property bool touchpadDisableWhileTyping: true
+    property real electronScroll: 0.4
     property var mice: []
     property var touchpads: []
 
@@ -41,6 +42,8 @@ Scope {
             + ", tap_to_click = " + bool(touchpadTapToClick)
             + ", disable_while_typing = " + bool(touchpadDisableWhileTyping)
             + " } } })"])
+        // Defined in hyprland.lua; covers every detected Chromium/Electron class.
+        Quickshell.execDetached(["hyprctl", "eval", "set_electron_scroll(" + electronScroll + ")"])
         for (var i = 0; i < mice.length; i++) {
             Quickshell.execDetached(["hyprctl", "eval",
                 "hl.device({ name = " + luaString(mice[i].name)
@@ -86,7 +89,8 @@ Scope {
             touchpadSpeed: root.touchpadSpeed,
             touchpadNaturalScroll: root.touchpadNaturalScroll,
             touchpadTapToClick: root.touchpadTapToClick,
-            touchpadDisableWhileTyping: root.touchpadDisableWhileTyping
+            touchpadDisableWhileTyping: root.touchpadDisableWhileTyping,
+            electronScroll: root.electronScroll
         }, null, 2))
     }
 

@@ -40,6 +40,7 @@ function M.input()
             disable_while_typing = json_bool(raw, "touchpadDisableWhileTyping", true),
         },
         touchpad_sensitivity = json_num(raw, "touchpadSpeed", 0.35),
+        electron_scroll = json_num(raw, "electronScroll", 0.4),
     }
 end
 
@@ -63,7 +64,19 @@ local function mode_is_real(mode)
     return w and h and w >= 200 and h >= 200
 end
 
-function M.apply_monitors()
+local function lid_closed()
+    for _, path in ipairs({
+        "/proc/acpi/button/lid/LID0/state",
+        "/proc/acpi/button/lid/LID/state",
+    }) do
+        local state = read_all(path)
+        if state then return state:find("closed", 1, true) ~= nil end
+    end
+    return false
+end
+
+function M.apply_monitors(closed)
+    if closed == nil then closed = lid_closed() end
     local raw = read_all(home .. "/.config/quickshell/lib/monitors.json")
     if not raw then return end
     -- Match by description, not connector name. A leftover DP-3 rule applies
@@ -71,14 +84,19 @@ function M.apply_monitors()
     for description, block in raw:gmatch('"([^"]+)"%s*:%s*({[^{}]*"output"%s*:%s*"[^"]+"[^{}]*})') do
         if description ~= "" and description ~= "knownPatterns" then
             local spec = { output = "desc:" .. description }
+            local laptop = block:match('"output"%s*:%s*"eDP%-1"')
+                or description:find("LQ135P1JX51", 1, true)
             local mode = block:match('"mode"%s*:%s*"([^"]+)"')
             local position = block:match('"position"%s*:%s*"([^"]+)"')
             local scale = block:match('"scale"%s*:%s*([%d.]+)')
-            if mode_is_real(mode) then
+            if laptop and closed then
+                hl.monitor({ output = spec.output, disabled = true })
+            elseif mode_is_real(mode) then
                 if mode then spec.mode = mode end
                 if position then spec.position = position end
                 if scale then spec.scale = tonumber(scale) end
                 if description:find("LQ135P1JX51", 1, true) then spec.bitdepth = 10 end
+                if laptop then spec.disabled = false end
                 hl.monitor(spec)
             end
         end

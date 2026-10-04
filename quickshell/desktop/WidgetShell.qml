@@ -129,6 +129,7 @@ Item {
                 case "progress": return progressComp
                 case "battery": return batteryComp
                 case "photos": return photosComp
+                case "image": return imageComp
                 case "voyager": return voyagerComp
                 default: return clockComp
                 }
@@ -370,5 +371,15 @@ Item {
     Component {
         id: photosComp
         PhotosWidget { theme: win.theme; rotationMinutes: Number(win.widgetSettings.interval || 5) }
+    }
+    Component {
+        id: imageComp
+        ImageWidget {
+            theme: win.theme
+            sourceUrl: win.widgetSettings.sourceUrl || ""
+            folderMode: !!win.widgetSettings.folderMode
+            rotationMinutes: Number(win.widgetSettings.interval || 5)
+            crop: win.widgetSettings.crop === undefined ? true : !!win.widgetSettings.crop
+        }
     }
 }

@@ -101,7 +101,7 @@ PanelWindow {
     onMonitorsModeChanged: if (win.monitorsMode) win._monEverOpened = true
     property QtObject hubTheme: theme
     // Top style drops the panel from under the bar; task style rises from the dock
-    readonly property bool topAnchored: Lib.Configuration.barStyle === "top"
+    readonly property bool topAnchored: true
     property int topGap: 8
     property int rightGap: 10
     readonly property string contentMode: win.wallpaperMode ? "wallpaper"

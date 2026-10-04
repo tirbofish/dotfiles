@@ -23,3 +23,25 @@ for (const [x, y, tx, ty, on] of [[50, 960, 850, 300, 'b'], [850, 300, 300, 500,
     assert.ok(r && r.on === on && Math.abs(r.x - tx) < 12, `hop ${x},${y} → ${tx},${ty} landed ${JSON.stringify(r)}`);
 }
 console.log('pet physics: ok');
+
+// Drag targets use logical output rectangles rather than physical pixel
+// widths, and support screens left/above the origin and vertical offsets.
+const screens = [
+    { name: 'laptop', x: 0, y: 200, width: 1440, height: 960 },
+    { name: 'left', x: -1920, y: 0, width: 1920, height: 1080 },
+    { name: 'scaled', x: 1440, y: -100, width: 1280, height: 720 }
+];
+assert.equal(P.screenAt(screens, -100, 600).name, 'left');
+assert.equal(P.screenAt(screens, 1440, 300).name, 'scaled', 'shared edge belongs to destination');
+assert.equal(P.screenAt(screens, 1500, -50).name, 'scaled', 'negative vertical origin');
+assert.equal(P.screenAt(screens, 1500, 800), null, 'gap below a shorter display');
+const drop = P.dragDropPosition(screens[1], -100, 600, 28, 34);
+assert.equal(drop.x, 1820);
+assert.equal(drop.y, 617);
+const edge = P.dragDropPosition(screens[2], 1440, -100, 28, 34);
+assert.equal(edge.x, 28, 'keep the body inside the new display');
+assert.equal(edge.y, 34, 'keep the head inside the new display');
+const canceled = P.dragDropPosition(screens[0], 2000, 2000, 28, 34);
+assert.equal(canceled.x, 1412);
+assert.equal(canceled.y, 960);
+console.log('pet monitor dragging: ok');

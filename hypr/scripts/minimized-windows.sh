@@ -10,15 +10,23 @@ normalize_address() {
 }
 
 hide() {
-    local target
+    local target geo
     target="$(normalize_address "${1:-$(hyprctl -j activewindow | jq -r .address)}")"
     hyprctl -q dispatch "hl.dsp.window.fullscreen({ action = \"unset\", window = \"address:$target\" })"
+    # x y w h monitor-name, for the dock's genie animation.
+    geo="$(jq -r --arg a "$target" --argjson mons "$(hyprctl -j monitors)" \
+        '.[] | select(.address == $a) | . as $c
+         | "\(.at[0]) \(.at[1]) \(.size[0]) \(.size[1]) \($mons[] | select(.id == $c.monitor) | .name)"' \
+        <<<"$(hyprctl -j clients)")"
+    # shellcheck disable=SC2086
+    [[ -n "$geo" ]] && qs ipc call dock minimize "$target" $geo >/dev/null 2>&1 && return
     hyprctl -q dispatch "hl.dsp.window.move({ workspace = \"special:minimized\", follow = false, window = \"address:$target\" })"
 }
 
 show() {
     local target workspace
     target="$(normalize_address "$1")"
+    qs ipc call dock restore "$target" >/dev/null 2>&1 && return
     workspace="$(hyprctl -j activeworkspace | jq -r .id)"
     hyprctl -q dispatch "hl.dsp.window.move({ workspace = $workspace, follow = false, window = \"address:$target\" })"
     hyprctl -q dispatch "hl.dsp.focus({ window = \"address:$target\" })"

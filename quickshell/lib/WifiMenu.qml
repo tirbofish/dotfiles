@@ -745,8 +745,7 @@ PanelWindow {
         height: implicitHeight
 
         anchors.right: parent.right
-        anchors.top: Configuration.barStyle === "top" ? parent.top : undefined
-        anchors.bottom: Configuration.barStyle === "top" ? undefined : parent.bottom
+        anchors.top: parent.top
         anchors.rightMargin: 10
         anchors.topMargin: 48
         anchors.bottomMargin: 48

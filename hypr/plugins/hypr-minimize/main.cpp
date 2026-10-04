@@ -34,8 +34,9 @@ static void hideWindow(PHLWINDOW w) {
 
     const auto addr = rc<uintptr_t>(w.get());
     g_pEventManager->postEvent(SHyprIPCEvent{.event = "minimized", .data = std::format("{:x},1", addr)});
+    // The script hands off to the dock (genie animation) and falls back to a plain move.
     HyprlandAPI::invokeHyprctlCommand("dispatch",
-        std::format("hl.dsp.window.move({{ workspace = \"special:minimized\", follow = false, window = \"address:0x{:x}\" }})", addr));
+        std::format("hl.dsp.exec_cmd(\"~/.config/hypr/scripts/minimized-windows.sh hide 0x{:x}\")", addr));
 }
 
 static void hookWindow(PHLWINDOW w) {
@@ -86,7 +87,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     for (auto const& w : Desktop::windowState()->windows())
         hookWindow(w);
 
-    return {"hypr-minimize", "Honor CSD/X11 minimize requests by hiding the window", "tirbofish", "1.2"};
+    return {"hypr-minimize", "Honor CSD/X11 minimize requests by hiding the window", "tirbofish", "1.3"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

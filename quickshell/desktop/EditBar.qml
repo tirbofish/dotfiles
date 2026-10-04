@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
@@ -15,13 +16,21 @@ PanelWindow {
     property string renamingPackId: ""
     property string renameDraft: ""
     property bool editingWidgetSetting: false
+    property string imagePickerWidgetId: ""
+    property string imagePickerOutputKey: ""
     readonly property var selectedSpec: {
         var _ = Lib.WidgetService.settingsStamp
         return Lib.WidgetService.findSpec(win.outputKey, Lib.WidgetService.selectedId)
     }
     readonly property var selectedEntry: selectedSpec
         ? Lib.WidgetService.catalogEntry(selectedSpec.type) : ({})
+    readonly property var selectedSettings: {
+        var _ = Lib.WidgetService.settingsStamp
+        return selectedSpec && selectedSpec.settings ? selectedSpec.settings : ({})
+    }
     readonly property var selectedOptions: selectedEntry.options || []
+    readonly property bool imageSettings: !!selectedSpec && selectedSpec.type === "image"
+    readonly property string imageSource: imageSettings ? (selectedSettings.sourceUrl || "") : ""
 
     // Stays mapped (empty input mask, hidden content) so entering edit mode
     // doesn't wait on a new surface.
@@ -50,6 +59,36 @@ PanelWindow {
     function finishRename() {
         Lib.WidgetService.renamePack(renamingPackId, renameDraft)
         renamingPackId = ""
+    }
+
+    function openImagePicker(folder) {
+        if (!win.imageSettings) return
+        win.imagePickerWidgetId = win.selectedSpec.id
+        win.imagePickerOutputKey = win.outputKey
+        if (folder) folderPicker.open()
+        else imagePicker.open()
+    }
+
+    function saveImageSource(url, folder) {
+        if (!Lib.WidgetService.findSpec(win.imagePickerOutputKey, win.imagePickerWidgetId)) return
+        Lib.WidgetService.setSettings(win.imagePickerOutputKey, win.imagePickerWidgetId,
+            { sourceUrl: url.toString(), folderMode: folder })
+    }
+
+    FileDialog {
+        id: imagePicker
+        title: "Choose one image"
+        fileMode: FileDialog.OpenFile
+        currentFolder: "file://" + Quickshell.env("HOME") + "/Pictures"
+        nameFilters: ["Images (*.jpg *.jpeg *.png *.webp *.gif *.bmp *.svg *.avif *.tif *.tiff *.JPG *.JPEG *.PNG *.WEBP *.GIF *.BMP *.SVG *.AVIF *.TIF *.TIFF)", "All files (*)"]
+        onAccepted: win.saveImageSource(selectedFile, false)
+    }
+
+    FolderDialog {
+        id: folderPicker
+        title: "Choose an image folder"
+        currentFolder: "file://" + Quickshell.env("HOME") + "/Pictures"
+        onAccepted: win.saveImageSource(selectedFolder, true)
     }
 
     Item {
@@ -108,7 +147,7 @@ PanelWindow {
             Rectangle {
                 visible: Lib.WidgetService.settingsOpen && win.selectedSpec
                 width: parent.width
-                height: 64
+                height: win.imageSettings ? 112 : 64
                 radius: 12
                 color: win.theme.bgCard
                 border.width: 1
@@ -117,6 +156,7 @@ PanelWindow {
                 RowLayout {
                     anchors.fill: parent
                     anchors.margins: 10
+                    anchors.bottomMargin: win.imageSettings ? 58 : 10
                     spacing: 12
 
                     ColumnLayout {
@@ -143,8 +183,8 @@ PanelWindow {
                             id: optionRow
                             required property var modelData
                             readonly property var currentValue:
-                                win.selectedSpec.settings && win.selectedSpec.settings[modelData.key] !== undefined
-                                    ? win.selectedSpec.settings[modelData.key] : modelData.value
+                                win.selectedSettings[modelData.key] !== undefined
+                                    ? win.selectedSettings[modelData.key] : modelData.value
                             spacing: 6
                             Text {
                                 text: optionRow.modelData.label
@@ -236,6 +276,39 @@ PanelWindow {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: Lib.WidgetService.settingsOpen = false
                         }
+                    }
+                }
+
+                RowLayout {
+                    visible: win.imageSettings
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 10
+                    height: 34
+                    spacing: 8
+
+                    StoreButton {
+                        label: "Choose image"
+                        onClicked: win.openImagePicker(false)
+                    }
+                    StoreButton {
+                        label: "Choose folder"
+                        onClicked: win.openImagePicker(true)
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: win.imageSource
+                            ? (win.selectedSettings.folderMode ? "Folder: " : "Image: ")
+                                + decodeURIComponent(win.imageSource.replace(/\/$/, "").split("/").pop())
+                            : "No image or folder selected"
+                        elide: Text.ElideMiddle
+                        font.family: win.theme.textFont
+                        font.pixelSize: 11
+                        color: win.theme.textSecondary
+                        HoverHandler { id: sourceHover }
+                        ToolTip.visible: sourceHover.hovered && win.imageSource !== ""
+                        ToolTip.text: decodeURIComponent(win.imageSource)
                     }
                 }
             }

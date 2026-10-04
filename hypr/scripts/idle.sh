@@ -132,14 +132,16 @@ EOF
       cat <<EOF
 listener {
     timeout = $sleep_s
-    on-timeout = systemctl suspend
+    on-timeout = python3 $HOME/.config/hypr/scripts/music-guard.py suspend
+    condition_cmd = python3 $HOME/.config/hypr/scripts/music-guard.py can-suspend
+    condition_retry = 10
 }
 
 listener {
     timeout = $sleep_s
-    on-timeout = systemctl suspend
+    on-timeout = python3 $HOME/.config/hypr/scripts/music-guard.py suspend
     ignore_inhibit = true
-    condition_cmd = pidof hyprlock >/dev/null
+    condition_cmd = pidof hyprlock >/dev/null && python3 $HOME/.config/hypr/scripts/music-guard.py can-suspend
     condition_retry = 10
 }
 EOF
@@ -152,8 +154,12 @@ EOF
   fi
   mv "$conf.tmp" "$conf"
 
-  pkill -x hypridle >/dev/null 2>&1 || true
-  hypridle >/dev/null 2>&1 &
+  # Let the user manager own hypridle so it survives a short-lived launcher
+  # and restarts if it crashes. Also retire any older unmanaged instance.
+  systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE
+  systemctl --user stop hypridle.service
+  pkill -u "$(id -u)" -x hypridle >/dev/null 2>&1 || true
+  systemctl --user start hypridle.service
   echo "lock=${lock_m}m screen=${screen_m}m sleep=${sleep_m}m"
 }
 

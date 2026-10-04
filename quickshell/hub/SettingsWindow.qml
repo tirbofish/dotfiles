@@ -35,7 +35,6 @@ FloatingWindow {
         { id: "touchpad",   label: "Touchpad" },
         { id: "layout",     label: "Layout" },
         { id: "clipboard",  label: "Clipboard" },
-        { id: "borders",    label: "Borders" },
         { id: "widgets",    label: "Widgets" },
         { id: "pet",        label: "Clawd" },
         { id: "codexbar",   label: "CodexBar" },

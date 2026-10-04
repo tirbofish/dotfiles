@@ -1,0 +1,21 @@
+{
+  "iconSize": 48,
+  "magnification": 1.6,
+  "magnificationRadius": 110,
+  "margin": 8,
+  "backgroundOpacity": 0.72,
+  "position": "bottom",
+  "fullLength": false,
+  "reserveSpace": true,
+  "autoHide": true,
+  "clickAction": "focus-or-launch",
+  "pinned": [
+    "org.gnome.Nautilus",
+    "brave-origin",
+    "kitty",
+    "spotify",
+    "obsidian",
+    "com.anthropic.Claude",
+    "anki"
+  ]
+}

@@ -34,6 +34,7 @@ fi
 GTK3_CONF="$HOME/.config/gtk-3.0"
 GTK3_SETTINGS="$GTK3_CONF/settings.ini"
 GTK4_CONF="$HOME/.config/gtk-4.0"
+GTK4_SETTINGS="$GTK4_CONF/settings.ini"
 KDE_GLOBALS="$HOME/.config/kdeglobals"
 STATE_FILE="$HOME/.cache/quickshell/theme_mode"
 KITTY_STATE="$HOME/.local/state/theme/kitty_theme.conf"
@@ -42,14 +43,15 @@ DUNST_CONF="$HOME/.config/dunst/dunstrc"
 # Added --no-wallpaper flag so reading_mode can handle its own wallpapers
 [[ "$*" == *"--no-wallpaper"* ]] && NO_WALLPAPER=1 || NO_WALLPAPER=0
 # Create necessary directories if they don't exist
-# mkdir -p "$GTK3_CONF" "$GTK4_CONF" "$(dirname "$STATE_FILE")" "$(dirname "$KITTY_STATE")"
+mkdir -p "$GTK3_CONF" "$GTK4_CONF" "$(dirname "$STATE_FILE")" "$(dirname "$KITTY_STATE")"
 # HELPER FUNCTIONS
-# Make sure GTK3 settings file exists with proper structure
-ensure_gtk3_ini() {
-  if [ ! -f "$GTK3_SETTINGS" ]; then
-    printf "[Settings]\ngtk-theme-name=\ngtk-icon-theme-name=\ngtk-application-prefer-dark-theme=0\n" > "$GTK3_SETTINGS"
-  elif ! grep -q '^\[Settings\]' "$GTK3_SETTINGS"; then
-    sed -i '1i [Settings]' "$GTK3_SETTINGS"
+# Make sure each GTK settings file exists with proper structure
+ensure_gtk_ini() {
+  local file="$1"
+  if [ ! -f "$file" ]; then
+    printf '[Settings]\n' > "$file"
+  elif ! grep -q '^\[Settings\]' "$file"; then
+    sed -i '1i [Settings]' "$file"
   fi
 }
 # Update INI file
@@ -66,7 +68,7 @@ update_ini_key() {
     sed -i "/^\[Settings\]/a ${key}=${value}" "$file"
   fi
 }
-# GTK4 uses symlinks to theme files instead of a config file
+# GTK4 also uses symlinks for the theme stylesheet and assets
 update_gtk4_links() {
   local theme="$1"
   local theme_path="$HOME/.themes/$theme/gtk-4.0"
@@ -238,7 +240,7 @@ fi
   # ---------------------------------------------------------------------------
   # GTK 3
   # ---------------------------------------------------------------------------
-  ensure_gtk3_ini
+  ensure_gtk_ini "$GTK3_SETTINGS"
   update_ini_key "$GTK3_SETTINGS" "gtk-theme-name" "$theme_gtk"
   update_ini_key "$GTK3_SETTINGS" "gtk-icon-theme-name" "$theme_icon"
   update_ini_key "$GTK3_SETTINGS" "gtk-application-prefer-dark-theme" "$prefer_dark_int"
@@ -247,6 +249,10 @@ fi
   # ---------------------------------------------------------------------------
   # GTK 4
   # ---------------------------------------------------------------------------
+  ensure_gtk_ini "$GTK4_SETTINGS"
+  update_ini_key "$GTK4_SETTINGS" "gtk-theme-name" "$theme_gtk"
+  update_ini_key "$GTK4_SETTINGS" "gtk-icon-theme-name" "$theme_icon"
+  update_ini_key "$GTK4_SETTINGS" "gtk-application-prefer-dark-theme" "$prefer_dark_int"
   update_gtk4_links "$theme_gtk"
 
   # ---------------------------------------------------------------------------
@@ -278,9 +284,9 @@ fi
   
   # Set Plasma color scheme (controls shell, panels, system UI)
   if [ "$mode" == "dark" ]; then
-    plasma-apply-colorscheme "Everforest Dark" 2>/dev/null || true
+    plasma-apply-colorscheme "EverforestDark" 2>/dev/null || true
   else
-    plasma-apply-colorscheme "Everforest Light" 2>/dev/null || true
+    plasma-apply-colorscheme "EverforestLight" 2>/dev/null || true
   fi
   
   # Set application style to Kvantum

@@ -7,7 +7,7 @@ import Quickshell.Services.Mpris
 import "../lib" as Lib
 import "physics.js" as Phys
 
-// Clawd lives on one monitor, above your windows. Window tops are platforms:
+// Clawd lives above your windows and can be carried between monitors. Window tops are platforms:
 // it walks on them, hops between them, rides along when you move them and
 // falls when you close them. Drag to pick it up and fling it; click to make
 // it happy; double-click to put it to bed; right-click and it follows you.
@@ -60,6 +60,73 @@ PanelWindow {
     property real lookAtX: -1
     property real lookAtY: -1
     property double lookUntil: 0
+    property real dragGlobalX: 0
+    property real dragGlobalY: 0
+    readonly property var dragScreen: mode === "drag"
+        ? Phys.screenAt(Quickshell.screens, dragGlobalX, dragGlobalY) : null
+
+    function finishDrag() {
+        var target = dragScreen || pet.screen
+        // Release the source surface's pointer grab before changing outputs.
+        pet.mode = "air"
+        if (!target) return
+        var point = Phys.dragDropPosition(target, dragGlobalX, dragGlobalY, halfW, mochi.height)
+        if (target !== pet.screen) {
+            pet.screen = target
+            pet.plats = []
+            pet.mon = { id: -1, x: target.x, y: target.y, width: target.width, top: 0, workspace: 0 }
+            pet.floorY = target.height
+            pet.lookUntil = 0
+            pet.cursorX = dragGlobalX - target.x
+            pet.cursorY = dragGlobalY - target.y
+            pet.refresh()
+        }
+        pet.px = point.x
+        pet.py = point.y
+    }
+
+    function cancelDrag() {
+        if (pet.mode !== "drag") return
+        // A canceled grab stays on its source display.
+        var point = Phys.dragDropPosition(pet.screen, dragGlobalX, dragGlobalY, halfW, mochi.height)
+        pet.px = point.x; pet.py = point.y
+        pet.vx = 0; pet.vy = 0; pet.mode = "air"
+        pet.feel("normal", 1200)
+        pet.say("", 0)
+    }
+
+    // Keep the original surface and its implicit pointer grab throughout the
+    // drag. Other outputs render a preview with an empty input region; moving
+    // the source surface mid-drag would cancel the grab on Wayland.
+    Variants {
+        model: Quickshell.screens
+        PanelWindow {
+            required property var modelData
+            screen: modelData
+            visible: pet.shown && pet.mode === "drag" && modelData !== pet.screen
+            color: "transparent"
+            exclusionMode: ExclusionMode.Ignore
+            exclusiveZone: -1
+            aboveWindows: true
+            WlrLayershell.layer: WlrLayer.Top
+            WlrLayershell.namespace: "desktop-pet-drag"
+            WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+            anchors { left: true; top: true; right: true; bottom: true }
+            mask: Region {}
+
+            Clawd {
+                x: pet.dragGlobalX - modelData.x - width / 2
+                y: pet.dragGlobalY - modelData.y - height / 2
+                tint: mochi.tint
+                mood: pet.mood
+                dangling: true
+                grounded: false
+                squash: mochi.squash
+                lookX: mochi.lookX
+                lookY: mochi.lookY
+            }
+        }
+    }
 
     function platform(id) {
         for (var i = 0; i < plats.length; i++) if (plats[i].id === id) return plats[i]
@@ -458,6 +525,8 @@ PanelWindow {
                 if (pet.mode !== "drag") { dragged = true; pet.wake(); pet.mode = "drag"; pet.on = ""; pet.feel("surprised", 99999); pet.say("wheee", 99999) }
                 pet.px = p.x
                 pet.py = p.y + mochi.height / 2
+                pet.dragGlobalX = p.x + pet.screen.x
+                pet.dragGlobalY = p.y + pet.screen.y
                 var now = Date.now()
                 trail.push({ t: now, x: pet.px, y: pet.py })
                 while (trail.length > 2 && now - trail[0].t > 90) trail.shift()
@@ -468,11 +537,12 @@ PanelWindow {
                 var dt = a && b && b.t > a.t ? (b.t - a.t) / 1000 : 1
                 pet.vx = a ? Math.max(-2600, Math.min(2600, (b.x - a.x) / dt)) : 0
                 pet.vy = a ? Math.max(-2600, Math.min(2600, (b.y - a.y) / dt)) : 0
-                pet.mode = "air"
+                pet.finishDrag()
                 pet.feel(Math.hypot(pet.vx, pet.vy) > 900 ? "happy" : "normal", 1200)
                 pet.say("", 0)
                 pet.lastPet = Date.now()
             }
+            onCanceled: pet.cancelDrag()
             onClicked: (m) => {
                 if (dragged) return
                 pet.lastPet = Date.now()
@@ -506,7 +576,8 @@ PanelWindow {
 
     // Speech bubble.
     Rectangle {
-        visible: pet.bubble.length > 0 || pet.emote === "think"
+        visible: (pet.bubble.length > 0 || pet.emote === "think")
+            && (pet.mode !== "drag" || pet.dragScreen === pet.screen)
         x: Math.max(4, Math.min(pet.width - width - 4, pet.px - width / 2))
         y: mochi.y - height - 8
         width: bubbleText.implicitWidth + 16

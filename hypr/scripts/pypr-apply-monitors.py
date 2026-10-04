@@ -24,6 +24,16 @@ LAPTOP_PANEL = "LQ135P1JX51"
 REAL_MODE = re.compile(r"^(\d{3,})x(\d{3,})(?:@([\d.]+))?")
 
 
+def lid_closed() -> bool:
+    for state in Path("/proc/acpi/button/lid").glob("*/state"):
+        try:
+            if "closed" in state.read_text():
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def hypr_json(cmd: str):
     result = subprocess.run(
         ["hyprctl", "-j", cmd], capture_output=True, text=True, check=False
@@ -103,17 +113,25 @@ def lua_str(value) -> str:
 
 
 def apply_monitor(spec: dict) -> None:
-    parts = [
-        f'output = "{lua_str(spec["output"])}"',
-        f'mode = "{lua_str(spec["mode"])}"',
-        f'position = "{lua_str(spec["position"])}"',
-        f'scale = {spec["scale"]}',
-        "disabled = false",
-    ]
-    if spec.get("bitdepth") is not None:
-        parts.append(f'bitdepth = {int(spec["bitdepth"])}')
-    if spec.get("vrr") is not None:
-        parts.append(f'vrr = {int(spec["vrr"])}')
+    laptop = spec["output"] == LAPTOP or LAPTOP_PANEL in spec["output"]
+    # Recheck at the modeset: the lid can close while EDID/retries are pending.
+    closed = laptop and lid_closed()
+    # Discard a queued close request if the lid has reopened since it was built.
+    if laptop and spec.get("disabled") and not closed:
+        return
+    disabled = bool(spec.get("disabled")) or closed
+    parts = [f'output = "{lua_str(spec["output"])}"']
+    if not disabled:
+        parts.extend([
+            f'mode = "{lua_str(spec["mode"])}"',
+            f'position = "{lua_str(spec["position"])}"',
+            f'scale = {spec["scale"]}',
+        ])
+        if spec.get("bitdepth") is not None:
+            parts.append(f'bitdepth = {int(spec["bitdepth"])}')
+        if spec.get("vrr") is not None:
+            parts.append(f'vrr = {int(spec["vrr"])}')
+    parts.append("disabled = true" if disabled else "disabled = false")
     subprocess.run(
         ["hyprctl", "eval", "hl.monitor({ " + ", ".join(parts) + " })"],
         check=False,
@@ -161,6 +179,13 @@ def apply_all() -> int:
         specs = []
         pending_zero = False
         for monitor in monitors:
+            if monitor.get("name") == LAPTOP and lid_closed():
+                description = str(monitor.get("description") or "")
+                specs.append({
+                    "output": "desc:" + description if description else LAPTOP,
+                    "disabled": True,
+                })
+                continue
             if (
                 monitor.get("disabled")
                 and monitor.get("name") != LAPTOP
@@ -176,8 +201,9 @@ def apply_all() -> int:
                 pending_zero = True
                 spec["position"] = "auto-right"
             specs.append(spec)
-        if len(specs) == 1:
-            specs[0]["position"] = "0x0"
+        enabled_specs = [spec for spec in specs if not spec.get("disabled")]
+        if len(enabled_specs) == 1:
+            enabled_specs[0]["position"] = "0x0"
         for spec in specs:
             apply_monitor(spec)
         if not pending_zero:

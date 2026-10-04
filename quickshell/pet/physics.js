@@ -4,6 +4,23 @@
 // of a window.
 var G = 2400          // gravity, px/s²
 
+// QScreen geometry uses logical desktop coordinates, including negative
+// origins and the logical sizes of scaled/rotated displays.
+function screenAt(screens, x, y) {
+    for (var i = 0; i < screens.length; i++) {
+        var s = screens[i]
+        if (x >= s.x && x < s.x + s.width && y >= s.y && y < s.y + s.height) return s
+    }
+    return null
+}
+
+function dragDropPosition(screen, x, y, halfW, bodyHeight) {
+    return {
+        x: Math.max(halfW, Math.min(screen.width - halfW, x - screen.x)),
+        y: Math.max(bodyHeight, Math.min(screen.height, y - screen.y + bodyHeight / 2))
+    }
+}
+
 // Hyprland clients → standable window tops on this monitor's active workspace.
 // Tops too close to the reserved top edge (bar) leave no headroom and are skipped.
 function platforms(clients, mon, floorY, headroom) {

@@ -298,51 +298,14 @@ Item {
                 }
             }
 
-            //  3. LAYOUT & TASKBAR
+            //  3. BAR
             SCard {
                 visible: root.showCat("layout")
-                label: "Layout & Taskbar"
+                label: "Bar"
                 Layout.fillWidth: true; Layout.fillHeight: true
 
-                SToggle { label: "Always dock mode"; checked: Lib.Configuration.taskbarForceDockMode
-                    onToggled: (v)=>{Lib.Configuration.taskbarForceDockMode=v; Lib.Configuration.save()} }
-                SToggle { label: "Always workspace mode"; checked: Lib.Configuration.taskbarForceWorkspaceMode
-                    onToggled: (v)=>{Lib.Configuration.taskbarForceWorkspaceMode=v; Lib.Configuration.save()} }
-                SDivider {}
-                RowLayout {
-                    Layout.fillWidth: true
-                    SLabel { text: "Excl. zone" }
-                    Item { Layout.fillWidth: true }
-                    Text { text: Lib.Configuration.taskbarExclusiveZone+" px"
-                        font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 15
-                        color: root.theme ? root.theme.textSecondary : "#888" }
-                }
-                SSlider { from: 30; to: 80; value: Lib.Configuration.taskbarExclusiveZone
-                    onMoved: (v)=>{Lib.Configuration.taskbarExclusiveZone=v; Lib.Configuration.save()} }
-                SDivider {}
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    SLabel { text: "Layout" }
-                    Item { Layout.fillWidth: true }
-                    SBtn { label: "Taskbar"; accent: Lib.Configuration.barStyle !== "top"
-                        onTriggered: { Lib.Configuration.barStyle = "task"; Lib.Configuration.save() }
-                    }
-                    SBtn { label: "Top bar"; accent: Lib.Configuration.barStyle === "top"
-                        onTriggered: { Lib.Configuration.barStyle = "top"; Lib.Configuration.save() }
-                    }
-                }
-                SDivider {}
                 SToggle { label: "Show tray"; checked: Lib.Configuration.barShowTray
                     onToggled: (v)=>{ Lib.Configuration.barShowTray=v; Lib.Configuration.save() } }
-                SDivider {}
-                SToggle { label: "Custom taskbar BG"; checked: Lib.Configuration.taskbarCustomBg
-                    onToggled: (v)=>{ Lib.Configuration.taskbarCustomBg=v; Lib.Configuration.save() }
-                }
-                CPicker { label: "Taskbar BG"
-                    currentHex: String(Lib.Configuration.taskbarCustomBgColor)
-                    onPicked: (hex)=>{ Lib.Configuration.taskbarCustomBgColor=hex; Lib.Configuration.save() }
-                }
             }
 
             //  4. POINTERS
@@ -392,6 +355,17 @@ Item {
                     onToggled: (v)=>{ Lib.InputService.touchpadTapToClick=v; Lib.InputService.save() } }
                 SToggle { label: "Disable while typing"; checked: Lib.InputService.touchpadDisableWhileTyping
                     onToggled: (v)=>{ Lib.InputService.touchpadDisableWhileTyping=v; Lib.InputService.save() } }
+                SDivider {}
+                RowLayout {
+                    Layout.fillWidth: true
+                    SLabel { text: "Electron app scroll speed" }
+                    Item { Layout.fillWidth: true }
+                    Text { text: Lib.InputService.electronScroll.toFixed(2) + "×"
+                        font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 14
+                        color: root.theme ? root.theme.textSecondary : "#888" }
+                }
+                SSlider { from: 0.05; to: 1.5; stepSize: 0.05; value: Lib.InputService.electronScroll
+                    onMoved: (v)=>{ Lib.InputService.electronScroll=v; Lib.InputService.save() } }
             }
 
             SCard {
@@ -425,41 +399,6 @@ Item {
                     Layout.fillWidth: true
                     Item { Layout.fillWidth: true }
                     SBtn { label: "Clear history now"; onTriggered: Lib.Configuration.wipeClipboard() }
-                }
-            }
-
-            //  5. SCREEN BORDERS
-            SCard {
-                visible: root.showCat("borders")
-                label: "Screen Borders"
-                Layout.fillWidth: true; Layout.fillHeight: true
-
-                SToggle { label: "Enabled"; checked: Lib.Configuration.bordersEnabled
-                    onToggled: (v)=>{
-                        Lib.Configuration.bordersEnabled=v; Lib.Configuration.save()
-                        if (v) root.toastRequested("adjust gaps_out in your hypr config")
-                    }
-                }
-                SToggle { label: "Always visible"; checked: Lib.Configuration.bordersForceVisible
-                    onToggled: (v)=>{ Lib.Configuration.bordersForceVisible=v; Lib.Configuration.save()
-                        if (v) root.toastRequested("adjust gaps_out in your hypr config") } }
-                SDivider {}
-                RowLayout {
-                    Layout.fillWidth: true
-                    SLabel { text: "Thickness" }
-                    Item { Layout.fillWidth: true }
-                    Text { text: Lib.Configuration.borderThickness+" px"
-                        font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 15
-                        color: root.theme ? root.theme.textSecondary : "#888" }
-                }
-                SSlider { from: 1; to: 20; value: Lib.Configuration.borderThickness
-                    onMoved: (v)=>{ Lib.Configuration.borderThickness=v; Lib.Configuration.save(); root.toastRequested("adjust gaps_out in your hypr config") } }
-                SDivider {}
-                SToggle { label: "Custom border color"; checked: Lib.Configuration.borderUseCustomColor
-                    onToggled: (v)=>{Lib.Configuration.borderUseCustomColor=v; Lib.Configuration.save()} }
-                CPicker { label: "Border color"
-                    currentHex: String(Lib.Configuration.borderFrameColor)
-                    onPicked: (hex)=>{Lib.Configuration.borderFrameColor=hex; Lib.Configuration.save()}
                 }
             }
 
