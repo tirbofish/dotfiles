@@ -500,6 +500,35 @@ Item {
                         Lib.Configuration.save()
                     }
                 }
+                Repeater {
+                    model: [
+                        { label: "Played bars", key: "barCavaPlayedOpacity" },
+                        { label: "Unplayed bars", key: "barCavaUnplayedOpacity" }
+                    ]
+                    ColumnLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        RowLayout {
+                            Layout.fillWidth: true
+                            SLabel { text: modelData.label }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                text: Math.round(Lib.Configuration[modelData.key] * 100) + "%"
+                                font.family: root.theme ? root.theme.textFont : ""; font.pixelSize: 14
+                                color: root.theme ? root.theme.textSecondary : "#888"
+                            }
+                        }
+                        SSlider {
+                            Layout.fillWidth: true
+                            from: 0; to: 1; stepSize: 0.05
+                            value: Lib.Configuration[modelData.key]
+                            onMoved: (v) => {
+                                Lib.Configuration[modelData.key] = v
+                                Lib.Configuration.save()
+                            }
+                        }
+                    }
+                }
                 SDivider {}
                 RowLayout {
                     Layout.fillWidth: true; spacing: 8

@@ -12,6 +12,10 @@ Item {
     property color accent: "#7AA1A6"
     property color border: Qt.rgba(1, 1, 1, 0.10)
     property int requestedBarCount: 0
+    // 0..1 song progress; < 0 disables progress dimming (backdrop only).
+    property real progress: -1
+    property real playedOpacity: 1
+    property real unplayedOpacity: 1
 
     readonly property int sourceBarCount: Lib.CavaService.barCount
     readonly property int barCount: requestedBarCount > 0
@@ -97,6 +101,10 @@ Item {
                     anchors.verticalCenter: root.centerBars ? parent.verticalCenter : undefined
                     radius: width / 2
                     color: root.accent
+                    // Each bar covers 1/N of the song; the bar currently being played fades in across its slice.
+                    opacity: root.progress < 0 ? 1
+                        : root.unplayedOpacity + (root.playedOpacity - root.unplayedOpacity)
+                            * Math.max(0, Math.min(1, root.progress * root.barCount - index))
                 }
             }
         }

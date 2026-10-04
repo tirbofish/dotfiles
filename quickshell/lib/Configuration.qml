@@ -64,6 +64,9 @@ Scope {
 
     // Top-bar hanging cava. 1 = current baked-in look.
     property real barCavaOpacity: 1.0
+    // Per-bar opacity for bars before/after the current song position.
+    property real barCavaPlayedOpacity: 0.7
+    property real barCavaUnplayedOpacity: 0.3
 
     // Shaders
     property string currentShader: "none"
@@ -215,6 +218,7 @@ Scope {
     readonly property var persistKeys: [
         "barShowBattery", "barShowTray",
         "barHeight", "iconSize", "barCavaOpacity",
+        "barCavaPlayedOpacity", "barCavaUnplayedOpacity",
         "desktopMode", "wallpaperDir",
         "maxEvents", "useCustomColors", "customAccent", "customBg",
         "customForeground", "customSecondary", "customDanger",

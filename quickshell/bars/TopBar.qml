@@ -507,6 +507,15 @@ PanelWindow {
                 clip: false
                 property var player: Mpris.players.values[0] ?? null
                 property bool isPlaying: player && player.playbackState === MprisPlaybackState.Playing
+
+                // MPRIS position doesn't emit while playing; poll it for the cava progress dimming.
+                Timer {
+                    interval: 1000
+                    repeat: true
+                    running: mediaCenter.isPlaying
+                    onTriggered: mediaCenter.player.positionChanged()
+                }
+
                 property string trackTitle: player ? player.trackTitle : ""
                 property string trackArtist: player ? player.trackArtist : ""
                 property string nowPlaying: {
@@ -532,6 +541,10 @@ PanelWindow {
                         requestedBarCount: Math.max(12, Math.min(64, Math.round(cavaHost.width / 24)))
                         accent: pal.accent
                         opacity: Lib.Configuration.barCavaOpacity
+                        progress: mediaCenter.player && mediaCenter.player.length > 0
+                            ? mediaCenter.player.position / mediaCenter.player.length : -1
+                        playedOpacity: Lib.Configuration.barCavaPlayedOpacity
+                        unplayedOpacity: Lib.Configuration.barCavaUnplayedOpacity
                         layer.enabled: true
                         layer.smooth: true
                         layer.effect: OpacityMask { maskSource: cavaEdgeMask }
