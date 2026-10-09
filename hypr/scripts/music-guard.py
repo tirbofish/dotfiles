@@ -8,6 +8,7 @@ work. Use `can-suspend` in hypridle conditions and `suspend` as its action.
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -53,8 +54,10 @@ class Audio:
 
     @property
     def stream_routes(self):
-        return {s["index"]: self.route(self.sinks.get(s["sink"]))
-                for s in self.streams}
+        # Skip streams not yet linked to a sink: short sounds (e.g. chess
+        # moves) briefly have no sink, which would look like a route change.
+        return {s["index"]: self.route(self.sinks[s["sink"]])
+                for s in self.streams if s["sink"] in self.sinks}
 
     def audible(self, stream):
         sink = self.sinks.get(stream["sink"], {})
@@ -111,8 +114,8 @@ def route_changed(previous, current):
         return True
     # A disconnected non-default output can remove its stream altogether.
     routes = {current.route(s) for s in current.sinks.values()}
-    return any(previous.audible(s) and before[s["index"]] not in routes
-               for s in previous.streams)
+    return any(previous.audible(s) and s["index"] in before
+               and before[s["index"]] not in routes for s in previous.streams)
 
 
 def normalized(value):
@@ -295,8 +298,10 @@ def main():
             return run("hyprctl", "dispatch", 'hl.dsp.dpms({action = "off"})').returncode
         return 1
     if action in ("suspend", "sleep"):
-        return subprocess.run(["systemctl", "--check-inhibitors=yes", "suspend"],
-                              check=False).returncode
+        # elogind's loginctl (Void) honours inhibitors by default.
+        cmd = (["systemctl", "--check-inhibitors=yes", "suspend"] if shutil.which("systemctl")
+               else ["loginctl", "suspend"])
+        return subprocess.run(cmd, check=False).returncode
     return 0
 
 

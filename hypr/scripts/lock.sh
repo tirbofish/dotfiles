@@ -27,6 +27,8 @@ for arg in "$@"; do
   esac
 done
 [[ -f "$SKIP" ]] && no_biopass=1
+# Biometric unlock is opt-in: install.sh only adds this PAM service if chosen.
+[[ -f /etc/pam.d/hyprlock-biopass ]] || no_biopass=1
 rm -f "$SKIP"
 
 lid_closed() {
@@ -155,7 +157,13 @@ if (( ! no_biopass )); then
   waiter_pid=$!
 fi
 
-wait "$hyprlock_pid"
+status=0
+wait "$hyprlock_pid" || status=$?
+# Keep crashed sessions' logs; hyprlock.log only survives two more locks.
+if (( status != 0 )); then
+  mkdir -p "$HOME/.cache/hyprlock-crashes"
+  cp "$RUNTIME/hyprlock.log" "$HOME/.cache/hyprlock-crashes/$(date +%F_%H%M%S)-exit$status.log" 2>/dev/null || true
+fi
 stop_biopass
 if [[ -n "$waiter_pid" ]]; then
   wait "$waiter_pid" 2>/dev/null || true

@@ -19,7 +19,7 @@ on() {
     echo on
     return
   fi
-  systemd-inhibit --what=idle:sleep --who=Caffeinate --why="Stay awake" --mode=block \
+  "$(command -v systemd-inhibit || command -v elogind-inhibit)" --what=idle:sleep --who=Caffeinate --why="Stay awake" --mode=block \
     sleep infinity >/dev/null 2>&1 &
   echo $! > "$pidfile"
   hyprctl dispatch 'hl.dsp.dpms({action = "on"})' >/dev/null 2>&1 || true

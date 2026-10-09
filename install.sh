@@ -1,5 +1,34 @@
-#!/usr/bin/env bash
-# Install the portable part of this configuration on Arch, Ubuntu, or macOS.
+#!/bin/sh
+# Install this configuration on Arch, Void, Ubuntu, or macOS:
+#   curl -fsSL https://raw.githubusercontent.com/tirbofish/dotfiles/main/install.sh | sh
+# POSIX bootstrap: when piped (or not under bash), fetch the repository and
+# re-run this file with bash on the terminal. Everything after it is bash.
+if [ -z "${BASH_VERSION:-}" ] || ! { [ -f "$0" ] && [ -d "$(dirname -- "$0")/hypr" ]; }; then
+    set -e
+    if [ -f "$0" ] && [ -d "$(dirname -- "$0")/hypr" ]; then
+        dir="$(cd -- "$(dirname -- "$0")" && pwd -P)"
+    else
+        [ -t 0 ] || cat >/dev/null # drain the rest of the piped script
+        dir="${DOTFILES_DIR:-$HOME/.local/share/tirbofish-dotfiles}"
+        if ! command -v git >/dev/null 2>&1 || ! command -v bash >/dev/null 2>&1; then
+            if command -v xbps-install >/dev/null 2>&1; then sudo xbps-install -Sy git bash
+            elif command -v pacman >/dev/null 2>&1; then sudo pacman -S --needed --noconfirm git bash
+            elif command -v apt-get >/dev/null 2>&1; then sudo apt-get update && sudo apt-get install -y git bash
+            else echo "error: install git and bash, then re-run." >&2; exit 1
+            fi
+        fi
+        if [ -d "$dir/.git" ]; then
+            git -C "$dir" pull --ff-only
+        else
+            git clone --depth 1 https://github.com/tirbofish/dotfiles.git "$dir"
+        fi
+    fi
+    if (exec </dev/tty) 2>/dev/null; then
+        exec bash "$dir/install.sh" "$@" </dev/tty
+    fi
+    exec bash "$dir/install.sh" "$@"
+fi
+
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -14,15 +43,26 @@ TERMINAL_ONLY=0
 PLATFORM=""
 PROFILE=""
 BREW=""
+YAY=""
 BACKUP_ROOT=""
 DID_INSTALL=0
+
+# Hardware features, chosen in choose_features (defaults come from detection).
+SURFACE=0
+NVIDIA=0
+BIOMETRIC=0
+LAPTOP_POWER=0
 
 usage() {
     cat <<'EOF'
 Usage: ./install.sh [--terminal-only] [--yes] [--dry-run]
+       curl -fsSL https://raw.githubusercontent.com/tirbofish/dotfiles/main/install.sh | sh
 
 Without options, choose the full Hyprland setup or the shared terminal setup
+and toggle hardware features (Surface tweaks, NVIDIA, biometric unlock)
 interactively. macOS installs only the compatible terminal configuration.
+When piped, the repository is cloned to $DOTFILES_DIR
+(default ~/.local/share/tirbofish-dotfiles) and linked from there.
 
   --terminal-only  Skip Linux desktop packages and configuration.
   --yes            Accept default answers.
@@ -101,8 +141,9 @@ detect_platform() {
             . /etc/os-release
             case "${ID:-}" in
                 arch) PLATFORM="arch" ;;
+                void) PLATFORM="void" ;;
                 ubuntu) PLATFORM="ubuntu" ;;
-                *) die "Supported Linux distributions are Arch and Ubuntu; found ${ID:-unknown}." ;;
+                *) die "Supported Linux distributions are Arch, Void, and Ubuntu; found ${ID:-unknown}." ;;
             esac
             ;;
         *)
@@ -123,33 +164,77 @@ choose_profile() {
     fi
 }
 
-install_arch_aur() {
-    local yay_cmd build_dir
-    local packages=(auto-cpufreq grimblast-git snappy-switcher brave-origin-bin)
+has_nvidia_gpu() {
+    local dev
+    for dev in /sys/bus/pci/devices/*; do
+        [[ "$(cat "$dev/vendor" 2>/dev/null)" == 0x10de &&
+            "$(cat "$dev/class" 2>/dev/null)" == 0x03* ]] && return 0
+    done
+    return 1
+}
 
-    if command -v yay >/dev/null 2>&1; then
-        yay_cmd="$(command -v yay)"
+yes_no() {
+    if (( $1 )); then printf yes; else printf no; fi
+}
+
+choose_features() {
+    local is_surface=0 has_battery=0
+
+    [[ "$PROFILE" == "desktop" ]] || return 0
+    grep -qs Surface /sys/class/dmi/id/product_name && is_surface=1
+    compgen -G '/sys/class/power_supply/BAT*' >/dev/null && has_battery=1
+
+    log "Hardware features"
+    ask "Apply Microsoft Surface tweaks (dock modeset workaround, speaker DSP)?" \
+        "$(yes_no "$is_surface")" && SURFACE=1
+    if has_nvidia_gpu; then
+        printf 'An NVIDIA GPU was detected.\n' >&2
+        ask "Install the NVIDIA driver and Hyprland's NVIDIA settings?" yes && NVIDIA=1
     else
-        ask "Install yay to fetch the Arch-only desktop packages?" "yes" ||
-            die "The full Arch profile needs yay for: ${packages[*]}"
-
-        if (( DRY_RUN )); then
-            run git clone https://aur.archlinux.org/yay.git /tmp/yay-build
-            log "Would build yay with makepkg."
-            yay_cmd="yay"
-        else
-            build_dir="$(mktemp -d)"
-            git clone --depth 1 https://aur.archlinux.org/yay.git "$build_dir/yay"
-            if ! (cd "$build_dir/yay" && makepkg -si --noconfirm); then
-                rm -rf "$build_dir"
-                die "Unable to build yay."
-            fi
-            rm -rf "$build_dir"
-            yay_cmd="$(command -v yay)" || die "yay was installed but is not on PATH."
-        fi
+        ask "No NVIDIA GPU detected. Configure for NVIDIA anyway?" no && NVIDIA=1
     fi
+    ask "Enable Biopass face unlock on the lock screen?" no && BIOMETRIC=1
+    if [[ "$PLATFORM" != "void" ]]; then
+        ask "Install auto-cpufreq for laptop power management?" \
+            "$(yes_no "$has_battery")" && LAPTOP_POWER=1
+    fi
+    log "Surface: $(yes_no "$SURFACE"), NVIDIA: $(yes_no "$NVIDIA"), biometric: $(yes_no "$BIOMETRIC"), auto-cpufreq: $(yes_no "$LAPTOP_POWER")"
+}
 
-    run "$yay_cmd" -S --needed --noconfirm "${packages[@]}"
+ensure_yay() {
+    local build_dir
+
+    [[ -n "$YAY" ]] && return
+    if command -v yay >/dev/null 2>&1; then
+        YAY="$(command -v yay)"
+        return
+    fi
+    ask "Install yay to fetch the AUR packages?" "yes" ||
+        die "The selected Arch setup needs yay for AUR packages."
+
+    if (( DRY_RUN )); then
+        run git clone https://aur.archlinux.org/yay.git /tmp/yay-build
+        log "Would build yay with makepkg."
+        YAY="yay"
+        return
+    fi
+    build_dir="$(mktemp -d)"
+    git clone --depth 1 https://aur.archlinux.org/yay.git "$build_dir/yay"
+    if ! (cd "$build_dir/yay" && makepkg -si --noconfirm); then
+        rm -rf "$build_dir"
+        die "Unable to build yay."
+    fi
+    rm -rf "$build_dir"
+    YAY="$(command -v yay)" || die "yay was installed but is not on PATH."
+}
+
+install_arch_aur() {
+    local packages=(grimblast-git snappy-switcher brave-origin-bin)
+
+    (( LAPTOP_POWER )) && packages+=(auto-cpufreq)
+    (( BIOMETRIC )) && packages+=(biopass-bin)
+    ensure_yay
+    run "$YAY" -S --needed --noconfirm "${packages[@]}"
 }
 
 install_arch() {
@@ -171,12 +256,115 @@ install_arch() {
         )
     fi
 
+    if [[ "$PROFILE" == "desktop" ]] && (( NVIDIA )); then
+        packages+=(nvidia-open-dkms nvidia-utils egl-wayland linux-headers)
+    fi
+
     run sudo pacman -Syu --needed --noconfirm "${packages[@]}"
     if [[ "$PROFILE" == "desktop" ]]; then
         install_arch_aur
         # On AC: performance platform profile (firmware ramps fans early) + turbo.
-        run sudo install -Dm644 "$ROOT/auto-cpufreq.conf" /etc/auto-cpufreq.conf
+        (( LAPTOP_POWER )) && run sudo install -Dm644 "$ROOT/auto-cpufreq.conf" /etc/auto-cpufreq.conf
     fi
+}
+
+enable_void_service() {
+    [[ -d "/etc/sv/$1" ]] || return 0
+    [[ -e "/var/service/$1" ]] || run sudo ln -s "/etc/sv/$1" /var/service/
+}
+
+add_void_hyprland_repo() {
+    local arch conf=/etc/xbps.d/hyprland-void.conf
+
+    [[ -f "$conf" ]] && return
+    arch="$(xbps-uhelper arch)"
+    [[ "$arch" == *-musl ]] || arch="$arch-glibc"
+    case "$arch" in
+        x86_64-glibc|x86_64-musl|aarch64-glibc|aarch64-musl) ;;
+        *) die "No Hyprland packages exist for $arch." ;;
+    esac
+    ask "Hyprland is not in Void's official repositories. Add the third-party sofijacom/hyprland-void repository?" yes ||
+        die "The desktop profile needs Hyprland >= 0.55."
+    run sudo sh -c "echo 'repository=https://raw.githubusercontent.com/sofijacom/hyprland-void/repository-$arch' > $conf"
+}
+
+install_jetbrains_nerd_font() {
+    local destination="$HOME/.local/share/fonts/JetBrainsMonoNerd"
+
+    compgen -G "$destination/*.ttf" >/dev/null && return
+    log "Installing JetBrains Mono Nerd Font"
+    run mkdir -p "$destination"
+    if (( DRY_RUN )); then
+        printf '+ curl -fsSL .../JetBrainsMono.tar.xz | tar -xJ -C %q\n' "$destination"
+        return
+    fi
+    curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.tar.xz |
+        tar -xJ -C "$destination"
+    fc-cache -f "$destination"
+}
+
+configure_void_session() {
+    local conf_d=/etc/pipewire/pipewire.conf.d file
+
+    # PipeWire on runit: load WirePlumber and the Pulse shim from pipewire itself.
+    run sudo mkdir -p "$conf_d"
+    for file in /usr/share/examples/wireplumber/10-wireplumber.conf \
+        /usr/share/examples/pipewire/20-pipewire-pulse.conf; do
+        [[ -e "$conf_d/${file##*/}" ]] || run sudo ln -s "$file" "$conf_d/"
+    done
+
+    if ask "Enable the dbus, elogind, polkitd, and bluetoothd services?" yes; then
+        for file in dbus elogind polkitd bluetoothd; do
+            enable_void_service "$file"
+        done
+    fi
+    if [[ ! -e /var/service/NetworkManager ]] &&
+        ask "Switch networking to NetworkManager (disables dhcpcd and wpa_supplicant)?" yes; then
+        for file in dhcpcd wpa_supplicant; do
+            [[ -L "/var/service/$file" ]] && run sudo rm "/var/service/$file"
+        done
+        enable_void_service NetworkManager
+    fi
+}
+
+install_void() {
+    local nvidia_pkg
+    local packages=(
+        base-devel git curl zsh kitty starship fastfetch neovim fzf jq fontconfig
+        unzip xz
+    )
+
+    if [[ "$PROFILE" == "desktop" ]]; then
+        add_void_hyprland_repo
+        packages+=(
+            dbus elogind polkit mesa-dri
+            hyprland hypridle hyprlock hyprpicker hyprpolkitagent quickshell
+            xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
+            awww dunst mako rofi nautilus mpv
+            pipewire wireplumber pavucontrol pamixer NetworkManager bluez blueman
+            brightnessctl playerctl grim slurp swappy wl-clipboard libnotify
+            python3 python3-dbus python3-gobject pywal khal vdirsyncer
+            polkit-gnome kvantum qt6ct Thunar xfconf zathura zathura-pdf-poppler
+            Waybar papirus-icon-theme nerd-fonts-symbols-ttf cava inotify-tools
+        )
+        (( BIOMETRIC )) && packages+=(pam-devel)
+    fi
+
+    run sudo xbps-install -Syu xbps
+    run sudo xbps-install -Syu "${packages[@]}"
+
+    [[ "$PROFILE" == "desktop" ]] || return 0
+    if (( NVIDIA )); then
+        nvidia_pkg="$(prompt_default "NVIDIA driver package (nvidia: RTX 20/GTX 16 and newer; nvidia580: GTX 10 and older)" nvidia)"
+        run sudo xbps-install -Sy void-repo-nonfree
+        run sudo xbps-install -Sy linux-headers "$nvidia_pkg"
+    fi
+    install_jetbrains_nerd_font
+    install_grimblast_from_source
+    install_snappy_switcher_from_source \
+        base-devel pkgconf wayland-protocols wayland-devel cairo-devel pango-devel \
+        json-c-devel libxkbcommon-devel glib-devel librsvg-devel
+    configure_void_session
 }
 
 APT_MISSING=()
@@ -230,10 +418,11 @@ install_snappy_switcher_from_source() {
 
     command -v snappy-switcher >/dev/null 2>&1 && return
     log "Building Snappy Switcher for the current user"
-    install_ubuntu_candidates \
-        build-essential pkg-config wayland-protocols libwayland-dev \
-        libcairo2-dev libpango1.0-dev libjson-c-dev libxkbcommon-dev \
-        libglib2.0-dev librsvg2-dev
+    if [[ "$PLATFORM" == "void" ]]; then
+        run sudo xbps-install -Sy "$@"
+    else
+        install_ubuntu_candidates "$@"
+    fi
 
     if (( DRY_RUN )); then
         printf '+ git clone --depth 1 --branch v4.0.0 %q /tmp/snappy-switcher\n' \
@@ -277,10 +466,16 @@ install_ubuntu() {
         'pywal|python3-pywal' khal vdirsyncer policykit-1 policykit-1-gnome \
         xdg-desktop-portal-hyprland kvantum qt6ct thunar xfconf zathura \
         zathura-pdf-poppler waybar papirus-icon-theme fonts-jetbrains-mono \
-        auto-cpufreq cava
+        cava
+    (( LAPTOP_POWER )) && install_ubuntu_candidates auto-cpufreq
 
+    (( NVIDIA )) && run sudo ubuntu-drivers install
     install_grimblast_from_source
-    install_snappy_switcher_from_source
+    install_snappy_switcher_from_source \
+        build-essential pkg-config wayland-protocols libwayland-dev \
+        libcairo2-dev libpango1.0-dev libjson-c-dev libxkbcommon-dev \
+        libglib2.0-dev librsvg2-dev
+    (( BIOMETRIC )) && install_ubuntu_candidates libpam0g-dev
 
     if ((${#APT_MISSING[@]})); then
         warn "No Ubuntu package was found for: ${APT_MISSING[*]}"
@@ -354,6 +549,7 @@ install_macos() {
 install_packages() {
     case "$PLATFORM" in
         arch) install_arch ;;
+        void) install_void ;;
         ubuntu) install_ubuntu ;;
         macos) install_macos ;;
     esac
@@ -397,9 +593,10 @@ link_configurations() {
     if [[ "$PROFILE" == "desktop" ]]; then
         items+=(
             hypr hyprpolkitagent quickshell rofi dunst mako waybar Kvantum
-            qt6ct pipewire wireplumber snappy-switcher swappy Thunar zathura
-            color-schemes mimeapps.list
+            qt6ct wireplumber snappy-switcher Thunar zathura color-schemes
         )
+        # Only holds the Surface Laptop 4 speaker filter chain.
+        (( SURFACE )) && items+=(pipewire)
     fi
 
     run mkdir -p "$CONFIG_HOME"
@@ -437,6 +634,43 @@ ensure_kitty_theme() {
     run ln -s "$theme" "$state_file"
 }
 
+write_features() {
+    local file="$ROOT/hypr/features.lua"
+    local surface=false nvidia=false
+
+    (( SURFACE )) && surface=true
+    (( NVIDIA )) && nvidia=true
+    if (( DRY_RUN )); then
+        log "Would write $file (surface = $surface, nvidia = $nvidia)."
+        return
+    fi
+    printf -- '-- Written by install.sh; re-run it or edit to toggle.\nreturn { surface = %s, nvidia = %s }\n' \
+        "$surface" "$nvidia" > "$file"
+}
+
+configure_nvidia() {
+    (( NVIDIA )) || return 0
+    # KMS is required for Hyprland; fbdev gives a native-resolution console.
+    run sudo sh -c "echo 'options nvidia_drm modeset=1 fbdev=1' > /etc/modprobe.d/nvidia-drm.conf"
+}
+
+configure_biometric() {
+    local pam_module
+
+    if (( ! BIOMETRIC )); then
+        [[ -f /etc/pam.d/hyprlock-biopass ]] &&
+            warn "Biopass is still enabled; delete /etc/pam.d/hyprlock-biopass to turn it off."
+        return 0
+    fi
+    pam_module="$(compgen -G '/usr/lib*/security/libbiopass_pam.so' | head -n 1 || true)"
+    if [[ -z "$pam_module" ]] && (( ! DRY_RUN )); then
+        warn "libbiopass_pam.so is not installed (Arch: biopass-bin from the AUR); biometric unlock was skipped."
+        return 0
+    fi
+    run cc -O2 -o "$ROOT/hypr/scripts/hyprlock-biopass-auth" "$ROOT/hypr/scripts/hyprlock-biopass-auth.c" -lpam
+    run sudo install -m 644 "$ROOT/hypr/pam.d/hyprlock-biopass" /etc/pam.d/hyprlock-biopass
+}
+
 initialize_desktop_runtime() {
     local wallpaper="$CONFIG_HOME/hypr/wallpapers/default-dark.jpg"
     local theme_script="$CONFIG_HOME/hypr/scripts/pywal.sh"
@@ -444,6 +678,14 @@ initialize_desktop_runtime() {
     run mkdir -p "$HOME/.cache/quickshell" "$HOME/.cache/wal" "$STATE_HOME/theme"
     ask "Generate the initial theme from the bundled dark wallpaper?" "yes" || return 0
     run "$theme_script" "$wallpaper" dark
+}
+
+install_oh_my_zsh() {
+    local omz="$HOME/.oh-my-zsh"
+    local p10k="$omz/custom/themes/powerlevel10k"
+
+    [[ -d "$omz" ]] || run git clone --depth 1 https://github.com/ohmyzsh/ohmyzsh.git "$omz"
+    [[ -d "$p10k" ]] || run git clone --depth 1 https://github.com/romkatv/powerlevel10k.git "$p10k"
 }
 
 append_zsh_source() {
@@ -466,8 +708,11 @@ EOF
 configure_zsh() {
     local zsh_path
 
-    ask "Source the bundled Starship and Fastfetch zsh setup?" "yes" && append_zsh_source
-    ask "Make zsh your login shell?" "no" || return 0
+    if ask "Install your zsh setup (Oh My Zsh, Powerlevel10k, Fastfetch, aliases)?" "yes"; then
+        install_oh_my_zsh
+        append_zsh_source
+    fi
+    ask "Make zsh your login shell?" "yes" || return 0
 
     zsh_path="$(command -v zsh)" || {
         warn "zsh is not installed, so the login shell was not changed."
@@ -632,6 +877,7 @@ main() {
     detect_platform
     choose_profile
     log "Selected $PROFILE profile for $PLATFORM."
+    choose_features
 
     if ask "Install the required packages now?" "yes"; then
         install_packages
@@ -643,13 +889,20 @@ main() {
         link_configurations
         install_bundled_fonts
         ensure_kitty_theme
-        [[ "$PROFILE" == "desktop" ]] && initialize_desktop_runtime
+        if [[ "$PROFILE" == "desktop" ]]; then
+            write_features
+            initialize_desktop_runtime
+        fi
     else
         warn "Configuration linking was skipped."
     fi
 
     configure_zsh
-    [[ "$PROFILE" == "desktop" ]] && configure_monitors
+    if [[ "$PROFILE" == "desktop" ]]; then
+        configure_nvidia
+        configure_biometric
+        configure_monitors
+    fi
 
     if (( DRY_RUN )); then
         log "Dry run complete."
@@ -660,6 +913,11 @@ main() {
     fi
 
     log "Setup complete. Restart your graphical session for the desktop profile."
+    if [[ "$PROFILE" == "desktop" && "$PLATFORM" == "void" ]]; then
+        printf 'On Void, reboot, then log in on a TTY and run: dbus-run-session start-hyprland\n'
+    fi
+    (( NVIDIA )) && printf 'Reboot to load the NVIDIA driver with modesetting.\n'
+    true
 }
 
 main "$@"

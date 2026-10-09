@@ -21,6 +21,17 @@ if palette_chunk then
     end
 end
 
+-- Hardware toggles written by install.sh to hypr/features.lua (untracked).
+-- Defaults match the Surface Laptop 4 this config was built on.
+local features = { surface = true, nvidia = false }
+local features_chunk = loadfile(home .. "/.config/hypr/features.lua")
+if features_chunk then
+    local ok, loaded = pcall(features_chunk)
+    if ok and type(loaded) == "table" then
+        for k, v in pairs(loaded) do features[k] = v end
+    end
+end
+
 -- Import Shader Manager and Inject Core
 local shader = require("shader")
 local persist_ok, persist_or_err = pcall(require, "persist")
@@ -87,8 +98,15 @@ local vicinae = local_binary_or_command("vicinae")
 -- After MST renames DP-4 -> DP-3, every atomic modeset on the ultrawide is
 -- EINVAL (even 640x480) and the output stays 0x0 until a compositor restart
 -- with the legacy DRM path.
-hl.env("AQ_NO_MODIFIERS", "1")
-hl.env("AQ_NO_ATOMIC", "1")
+if features.surface then
+    hl.env("AQ_NO_MODIFIERS", "1")
+    hl.env("AQ_NO_ATOMIC", "1")
+end
+if features.nvidia then
+    hl.env("LIBVA_DRIVER_NAME", "nvidia")
+    hl.env("__GLX_VENDOR_LIBRARY_NAME", "nvidia")
+    hl.env("NVD_BACKEND", "direct")
+end
 hl.env("HYPRCURSOR_THEME", cursor_theme)
 hl.env("HYPRCURSOR_SIZE",  "32")
 hl.env("XCURSOR_THEME",    cursor_theme)
@@ -182,16 +200,18 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("gsettings set org.gnome.desktop.interface color-scheme prefer-" .. theme_mode())
     hl.exec_cmd("hyprpm reload")
     hl.exec_cmd("hyprctl plugin list | grep -q hypr-minimize || hyprctl plugin load " .. home .. "/.config/hypr/plugins/hypr-minimize/hypr-minimize.so")
+    -- No systemd user session (Void/runit): start PipeWire with the session.
+    hl.exec_cmd("command -v systemctl >/dev/null || pgrep -u \"$USER\" -x pipewire >/dev/null || pipewire")
     hl.exec_cmd("qs")
     -- Hyprland's monitor events run the lid-aware apply script. Retire the
     -- second layout writer, which otherwise re-enables a closed laptop panel.
     hl.exec_cmd("systemctl --user import-environment WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE && systemctl --user stop kanshi.service pyprland.service")
     hl.exec_cmd("awww-daemon")
     hl.exec_cmd(scripts .. "/idle.sh apply")
-    hl.exec_cmd("systemctl --user start hypr-music-guard.service")
+    hl.exec_cmd("systemctl --user start hypr-music-guard.service 2>/dev/null || python3 " .. scripts .. "/music-guard.py watch")
     hl.exec_cmd(vicinae .. " server --replace")
     -- logind's default HandlePowerKey=poweroff wins unless we inhibit it.
-    hl.exec_cmd("systemctl --user start hypr-power-key-lock.service")
+    hl.exec_cmd("systemctl --user start hypr-power-key-lock.service 2>/dev/null || \"$(command -v systemd-inhibit || command -v elogind-inhibit)\" --what=handle-power-key --who=Hyprland --why=power-button-lock --mode=block sleep infinity")
     hl.exec_cmd("systemctl --user start cpu-starvation-guard.service")
     hl.exec_cmd("dunst")
     hl.exec_cmd(scripts .. "/clipboard-history.sh boot")
@@ -200,7 +220,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("kdeconnect-indicator")
     hl.exec_cmd("pgrep -f bt-audio-agent.py >/dev/null || " .. scripts .. "/bt-audio-agent.py")
     -- hyprpolkitagent if you have it, polkit-gnome otherwise
-    hl.exec_cmd("systemctl --user start hyprpolkitagent 2>/dev/null || /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1")
+    hl.exec_cmd("systemctl --user start hyprpolkitagent 2>/dev/null || /usr/libexec/hyprpolkitagent 2>/dev/null || /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 2>/dev/null || /usr/libexec/polkit-gnome-authentication-agent-1")
     -- needs the oauth done first, skip it if there's no config
     hl.exec_cmd("[ -f $HOME/.config/vdirsyncer/config ] && vdirsyncer sync || true")
     hl.exec_cmd("sleep 1 && mpv --no-video --volume=100 " .. home .. "/.config/hypr/sounds/startup.wav")
@@ -458,7 +478,10 @@ hl.config({
         touchpad = {
             natural_scroll       = input.touchpad.natural_scroll,
             tap_to_click         = input.touchpad.tap_to_click,
-            disable_while_typing = input.touchpad.disable_while_typing
+            disable_while_typing = input.touchpad.disable_while_typing,
+            -- macOS-style: 2-finger click = right, 3-finger = middle (no click zones)
+            clickfinger_behavior = true,
+            drag_lock            = 1,
         },
         -- Closed lid presses the keyboard into the panel; keep the digitizer
         -- off then, and pin remaining events to eDP-1 so they cannot leak
@@ -482,6 +505,8 @@ hl.config({
     gestures = {
         workspace_swipe_use_r   = false,
         workspace_swipe_forever = false,
+        workspace_swipe_create_new = false,  -- macOS never spawns a Space on swipe
+        workspace_swipe_cancel_ratio = 0.3,
     },
 layerrule = {
     "animation slide, rofi",
@@ -540,6 +565,17 @@ hl.gesture({
     action = function()
         hl.exec_cmd(scripts .. "/desktop-mode.sh up")
     end,
+})
+-- macOS: 4-finger pinch in = Launchpad, spread out = Show Desktop
+hl.gesture({
+    fingers = 4,
+    direction = "pinchin",
+    action = function() hl.exec_cmd(vicinae .. " toggle") end,
+})
+hl.gesture({
+    fingers = 4,
+    direction = "pinchout",
+    action = function() hl.exec_cmd(scripts .. "/desktop-mode.sh desktop") end,
 })
 
 local hymission = hl.plugin and hl.plugin.hymission
@@ -610,7 +646,6 @@ hl.bind(mod .. " + " .. alt .. " + F", function()
     hl.dispatch(hl.dsp.window.center())
     workspace_float.schedule()
 end)
-local float_l_saved = {}
 local last_float_geom = {}
 local function reserved_sides(r)
     r = r or {}
@@ -682,7 +717,6 @@ hl.on("window.close", function(win)
     local a = win and tostring(win.address)
     if not a then return end
     last_float_geom[a] = nil
-    float_l_saved[a] = nil
 end)
 hl.bind(mod .. " + F", function()
     local win = hl.get_active_window()
@@ -812,50 +846,31 @@ hl.bind(mod .. " + SHIFT + UP",   hl.dsp.layout("togglesplit"))
 hl.bind(mod .. " + G",    hl.dsp.group.toggle())
 
 hl.bind(mod .. " + L", function()
-    local win = hl.get_active_window()
-    if not win then return end
-    local tw, th = 1440, 1080
-    local extra = 16
-    local area = monitor_work_area()
-    local addr = tostring(win.address)
-    local g = window_geom(win)
-    local tx, ty, tw2, th2
-    if area and area.w > 50 and area.h > 50 then
-        tw2 = math.max(200, math.min(tw, math.floor(area.w - extra)))
-        th2 = math.max(200, math.min(th, math.floor(area.h - extra)))
-        tx = area.x + (area.w - tw2) / 2
-        ty = area.y + (area.h - th2) / 2
-    end
-    local in_layout = win.floating and tx
-        and math.abs(g.x - tx) <= 10 and math.abs(g.y - ty) <= 10
-        and math.abs(g.w - tw2) <= 20 and math.abs(g.h - th2) <= 20
-    if in_layout and float_l_saved[addr] then
-        local prev = float_l_saved[addr]
-        if win.floating then
-            save_float_geom(win)
+    local wsid = workspace_id_of(hl.get_active_window())
+    if not wsid then return end
+    local wins, any_tiled = {}, false
+    for _, w in ipairs(hl.get_windows() or {}) do
+        if workspace_id_of(w) == wsid and not w.hidden and not w.pinned then
+            wins[#wins + 1] = w
+            if not w.floating then any_tiled = true end
         end
-        if prev.floating then
-            place_floating(prev.x, prev.y, prev.w, prev.h)
+    end
+    for _, w in ipairs(wins) do
+        local sel = window_selector(w)
+        if any_tiled then
+            -- Float in place unless the window has a remembered float spot.
+            if not w.floating then
+                local g = window_geom(w)
+                hl.dispatch(hl.dsp.window.float({ action = "set", window = sel }))
+                if not restore_float_geom(w) then place_floating(g.x, g.y, g.w, g.h, w) end
+            end
         else
-            hl.dispatch(hl.dsp.window.float({ action = "unset" }))
+            save_float_geom(w)
+            hl.dispatch(hl.dsp.window.float({ action = "unset", window = sel }))
         end
-        float_l_saved[addr] = nil
-        workspace_float.schedule()
-        return
-    end
-    float_l_saved[addr] = {
-        x = g.x, y = g.y, w = g.w, h = g.h,
-        floating = not not win.floating,
-    }
-    hl.dispatch(hl.dsp.window.float({ action = "set" }))
-    if tx then
-        place_floating(tx, ty, tw2, th2)
-    else
-        hl.dispatch(hl.dsp.window.resize({ x = tw, y = th, relative = false }))
-        hl.dispatch(hl.dsp.window.center())
     end
     workspace_float.schedule()
-end, { description = "Float 1440x1080, toggle previous position" })
+end, { description = "Toggle workspace all-floating / all-tiled, keep positions" })
 
 hl.bind(mod .. " + CTRL + left",  hl.dsp.focus({ workspace = "m-1" }))
 hl.bind(mod .. " + CTRL + right", hl.dsp.focus({ workspace = "m+1" }))
