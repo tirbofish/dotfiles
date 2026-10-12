@@ -209,18 +209,17 @@ ensure_yay() {
         YAY="$(command -v yay)"
         return
     fi
-    ask "Install yay to fetch the AUR packages?" "yes" ||
-        die "The selected Arch setup needs yay for AUR packages."
 
+    log "Installing yay (yay-bin from the AUR)"
     if (( DRY_RUN )); then
-        run git clone https://aur.archlinux.org/yay.git /tmp/yay-build
-        log "Would build yay with makepkg."
+        run git clone --depth 1 https://aur.archlinux.org/yay-bin.git /tmp/yay-bin
+        run makepkg -si --noconfirm
         YAY="yay"
         return
     fi
     build_dir="$(mktemp -d)"
-    git clone --depth 1 https://aur.archlinux.org/yay.git "$build_dir/yay"
-    if ! (cd "$build_dir/yay" && makepkg -si --noconfirm); then
+    git clone --depth 1 https://aur.archlinux.org/yay-bin.git "$build_dir/yay-bin"
+    if ! (cd "$build_dir/yay-bin" && makepkg -si --noconfirm); then
         rm -rf "$build_dir"
         die "Unable to build yay."
     fi
@@ -229,10 +228,33 @@ ensure_yay() {
 }
 
 install_arch_aur() {
-    local packages=(grimblast-git snappy-switcher brave-origin-bin)
+    local packages=(brave-origin-bin)
 
+    [[ "$PROFILE" == "desktop" ]] && packages+=(
+        grimblast-git snappy-switcher python-pywal16 hyprshade pyprland hypremoji
+    )
     (( LAPTOP_POWER )) && packages+=(auto-cpufreq)
-    (( BIOMETRIC )) && packages+=(biopass-bin)
+    (( BIOMETRIC )) && packages+=(biopass-bin howdy-git)
+    if ask "Install the extra AUR apps (editors, browsers, Spotify, security tools, ...)?" yes; then
+        packages+=(
+            # editors / dev
+            visual-studio-code-bin cursor-bin antigravity jetbrains-toolbox
+            github-copilot-bin claude-code claude-desktop codexbar-cli t3code-bin
+            google-cloud-cli google-colab-cli jdk17-temurin lazysql lmstudio-bin
+            termius debtap pacdep
+            # browsers / apps
+            helium-browser-bin affine-bin concord-bin parsec-bin jdownloader2
+            r-quick-share-bin proton-drive-cli zima-linux-client
+            spotify spicetify-cli spotatui-bin spotifast-bin
+            ani-cli ani-skip-git nyaa grok-bot-bin
+            # network / vpn
+            blipnet connmaster connmaster-cli squawker-vpn-bin
+            # security
+            dirb hashid whatweb pngcheck opsec rockyou wordlists
+            # fonts / hardware
+            ttf-cm-unicode ttf-google-fonts-git brother-hll2305w
+        )
+    fi
     ensure_yay
     run "$YAY" -S --needed --noconfirm "${packages[@]}"
 }
@@ -249,7 +271,7 @@ install_arch() {
             pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber
             pavucontrol pamixer networkmanager bluez bluez-utils blueman
             brightnessctl playerctl grim slurp swappy wl-clipboard libnotify
-            python python-pywal khal vdirsyncer polkit polkit-gnome
+            python khal vdirsyncer polkit polkit-gnome
             xdg-desktop-portal-hyprland kvantum qt6ct thunar xfconf
             zathura zathura-pdf-poppler waybar papirus-icon-theme
             ttf-jetbrains-mono-nerd cava
@@ -261,8 +283,8 @@ install_arch() {
     fi
 
     run sudo pacman -Syu --needed --noconfirm "${packages[@]}"
+    install_arch_aur
     if [[ "$PROFILE" == "desktop" ]]; then
-        install_arch_aur
         # On AC: performance platform profile (firmware ramps fans early) + turbo.
         (( LAPTOP_POWER )) && run sudo install -Dm644 "$ROOT/auto-cpufreq.conf" /etc/auto-cpufreq.conf
     fi
