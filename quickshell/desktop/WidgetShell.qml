@@ -18,7 +18,7 @@ Item {
     readonly property bool selected: editing && Lib.WidgetService.selectedId === spec.id
     readonly property var widgetSettings: {
         var _ = Lib.WidgetService.settingsStamp
-        return spec && spec.settings ? spec.settings : ({})
+        return Lib.WidgetService.settingsFor(spec)
     }
     readonly property real screenW: parent ? parent.width : 1920
     readonly property real screenH: parent ? parent.height : 1080
@@ -128,9 +128,10 @@ Item {
                 case "codexbar": return codexbarComp
                 case "progress": return progressComp
                 case "battery": return batteryComp
-                case "photos": return photosComp
-                case "image": return imageComp
+                case "image":
+                case "photos": return imageComp     // old Photos widgets
                 case "voyager": return voyagerComp
+                case "mail": return mailComp
                 default: return clockComp
                 }
             }
@@ -299,8 +300,16 @@ Item {
         WeatherWidget { theme: win.theme }
     }
     Component {
+        id: mailComp
+        MailWidget {
+            theme: win.theme
+            provider: win.widgetSettings.provider || "Google"
+            query: win.widgetSettings.query || "is:unread in:inbox"
+        }
+    }
+    Component {
         id: calendarComp
-        CalendarWidget { theme: win.theme }
+        CalendarWidget { theme: win.theme; provider: win.widgetSettings.provider || "Proton" }
     }
     Component {
         id: mediaComp
@@ -367,10 +376,6 @@ Item {
     Component {
         id: voyagerComp
         VoyagerWidget { theme: win.theme }
-    }
-    Component {
-        id: photosComp
-        PhotosWidget { theme: win.theme; rotationMinutes: Number(win.widgetSettings.interval || 5) }
     }
     Component {
         id: imageComp

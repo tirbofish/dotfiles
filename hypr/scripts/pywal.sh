@@ -151,6 +151,8 @@ obsidian_registry="$HOME/.config/obsidian/obsidian.json"
 if [[ -f "$obsidian_registry" ]]; then
   obsidian_vault="$(jq -r '([.vaults[] | select(.open == true) | .path] + [.vaults[].path])[0] // empty' "$obsidian_registry" 2>/dev/null || true)"
   obsidian_snippet="$obsidian_vault/.obsidian/snippets/surface-pywal.css"
+  # Only the six seed lines are rewritten. The snippet derives text colors
+  # from them so color8/color1 are not used raw (they fail contrast on dark backgrounds).
   if [[ -f "$obsidian_snippet" ]]; then
     sed -i \
       -e "s|^  --surface-bg:.*|  --surface-bg: $background;|" \

@@ -21,6 +21,8 @@ Scope {
     property bool settingsOpen: false
     property string selectedId: ""
     property var outputs: ({})
+    // Per-type settings shared by every display (todos, timers, options...).
+    property var shared: ({})
     property var packs: []
     property int stamp: 0
     property int settingsStamp: 0
@@ -31,20 +33,25 @@ Scope {
         { type: "worldclock",  label: "World Clocks",    detail: "Times around the world",       icon: "󰗊", w: Grid.span(3), h: Grid.span(2),
             options: [{ key: "cities", label: "Time zones", kind: "text", value: "Australia/Sydney, UTC, America/New_York, Asia/Tokyo" }] },
         { type: "weather",     label: "Weather",         detail: "Current local conditions",     icon: "󰖐", w: Grid.span(2), h: Grid.span(1)},
-        { type: "calendar",    label: "Proton Calendar", detail: "Your upcoming events",         icon: "󰃭", w: Grid.span(3), h: Grid.span(4)},
+        { type: "calendar",    label: "Calendar",        detail: "Upcoming Proton or Google events", icon: "󰃭", w: Grid.span(3), h: Grid.span(4),
+            options: [{ key: "provider", label: "Provider", kind: "choice", value: "Proton", values: ["Proton", "Google", "Both"] }] },
+        { type: "mail",        label: "Mail",            detail: "Unread Proton Mail and Gmail", icon: "󰇮", w: Grid.span(3), h: Grid.span(3),
+            options: [{ key: "provider", label: "Provider", kind: "choice", value: "Google", values: ["Proton", "Google", "Both"] },
+                { key: "query", label: "Gmail search", kind: "text", value: "is:unread in:inbox" }] },
         { type: "media",       label: "Now Playing",     detail: "Media artwork and controls",   icon: "󰎆", w: Grid.span(3), h: Grid.span(1),
             options: [{ key: "showArtwork", label: "Show artwork", kind: "bool", value: true }] },
         { type: "battery",     label: "Batteries",       detail: "Charge, health and power",     icon: "󰁹", w: Grid.span(2), h: Grid.span(1),
             options: [{ key: "showDetails", label: "Show health and cycles", kind: "bool", value: true }] },
-        { type: "photos",      label: "Photos",          detail: "Rotates through ~/Pictures",   icon: "󰋩", w: Grid.span(3), h: Grid.span(2),
-            options: [{ key: "interval", label: "Rotate every", kind: "choice", value: 5, values: [1, 5, 15, 30], suffix: " min" }] },
-        { type: "image",       label: "Image",           detail: "One image or a folder slideshow", icon: "󰋩", w: Grid.span(3), h: Grid.span(2),
+        { type: "image",       label: "Image",           detail: "~/Pictures, a folder slideshow or one image", icon: "󰋩", w: Grid.span(3), h: Grid.span(2),
             options: [{ key: "interval", label: "Rotate every", kind: "choice", value: 5, values: [1, 5, 15, 30], suffix: " min" },
-                { key: "crop", label: "Crop to fill", kind: "bool", value: true }] },
+                { key: "crop", label: "Crop to fill", kind: "bool", value: true },
+                { key: "synced", label: "Sync across displays", kind: "bool", value: false }] },
         { type: "stats",       label: "System",          detail: "CPU, memory and uptime",       icon: "󰍛", w: Grid.span(2), h: Grid.span(2),
             options: [{ key: "interval", label: "Refresh every", kind: "choice", value: 2, values: [1, 2, 5, 10], suffix: " sec" }] },
-        { type: "notes",       label: "Notes",           detail: "A persistent quick note",      icon: "󰎚", w: Grid.span(3), h: Grid.span(2)},
-        { type: "todo",        label: "Todo",            detail: "Interactive reminders",        icon: "󰄬", w: Grid.span(3), h: Grid.span(3)},
+        { type: "notes",       label: "Notes",           detail: "A persistent quick note",      icon: "󰎚", w: Grid.span(3), h: Grid.span(2),
+            options: [{ key: "synced", label: "Sync across displays", kind: "bool", value: false }] },
+        { type: "todo",        label: "Todo",            detail: "Interactive reminders",        icon: "󰄬", w: Grid.span(3), h: Grid.span(3),
+            options: [{ key: "google", label: "Sync with Google Tasks", kind: "bool", value: true }] },
         { type: "pomodoro",    label: "Pomodoro",        detail: "Focus timer with breaks",      icon: "󰄉", w: Grid.span(2), h: Grid.span(2),
             options: [{ key: "sessionMin", label: "Session", kind: "choice", value: 50, values: [25, 50, 60, 90, 120, 180], suffix: " min" }] },
         { type: "voyager",     label: "Voyager 1",       detail: "Live distance to the farthest spacecraft", icon: "✦", w: Grid.span(4), h: Grid.span(3) },
@@ -213,34 +220,200 @@ Scope {
         return spec ? root._snapSpec(spec, spec.x, spec.y, spec.w, spec.h, screenW, screenH) : false
     }
 
-    function setSetting(outputKey, id, key, value) {
-        var spec = root.findSpec(outputKey, id)
-        if (!spec) return
-        var s = spec.settings ? root._clone(spec.settings) : {}
-        s[key] = value
-        spec.settings = s
+    // Stickies stay on their own display unless their "synced" option is on;
+    // everything else shares one settings object per widget type.
+    readonly property var localTypes: ["notes", "image"]
+    // Kept on each widget, never shared. A provider also picks which shared
+    // bucket a widget joins: only widgets on the same provider sync.
+    readonly property var ownKeys: ["synced", "provider"]
+
+    function _own(settings) {
+        var out = {}
+        for (var i = 0; i < root.ownKeys.length; i++)
+            if (settings && settings[root.ownKeys[i]] !== undefined)
+                out[root.ownKeys[i]] = settings[root.ownKeys[i]]
+        return out
+    }
+
+    function sharedKey(spec) {
+        var opts = root.catalogEntry(spec.type).options || []
+        var opt = opts.filter(o => o.key === "provider")[0]
+        if (!opt) return spec.type
+        return spec.type + ":" + ((spec.settings && spec.settings.provider) || opt.value)
+    }
+
+    function isShared(spec) {
+        return !!spec && (root.localTypes.indexOf(spec.type) === -1
+            || !!(spec.settings && spec.settings.synced))
+    }
+
+    function settingsFor(spec) {
+        if (!spec) return {}
+        var own = spec.settings || {}
+        if (!root.isShared(spec)) return own
+        return Object.assign({}, root.shared[root.sharedKey(spec)] || {}, root._own(own))
+    }
+
+    function _write(spec, values) {
+        var own = spec.settings ? root._clone(spec.settings) : {}
+        var turningOn = values.synced === true && !own.synced
+        for (var o in values)
+            if (root.ownKeys.indexOf(o) !== -1) own[o] = values[o]
+        spec.settings = own
+        if (root.isShared(spec)) {
+            var key = root.sharedKey(spec)
+            var next = Object.assign({}, root.shared)
+            // The first sticky to opt in seeds the shared copy with its content.
+            var cur = turningOn && !next[key] ? root._clone(own) : root._clone(next[key] || {})
+            for (var k in values) {
+                if (root.ownKeys.indexOf(k) !== -1) continue
+                if (k === "todos") root._trackTodos(cur, values.todos)
+                else cur[k] = values[k]
+            }
+            for (var d = 0; d < root.ownKeys.length; d++) delete cur[root.ownKeys[d]]
+            next[key] = cur
+            root.shared = next
+        } else {
+            for (var j in values) own[j] = values[j]
+        }
         root.settingsStamp++
         root.save()
+        if ("todos" in values || "google" in values) gtasks.kick()
+    }
+
+    // Stamps edits so Google Tasks sync can tell which side changed, and
+    // remembers deleted synced tasks so they get deleted remotely too.
+    function _trackTodos(cur, list) {
+        var old = {}
+        var prev = cur.todos || []
+        for (var i = 0; i < prev.length; i++) old[prev[i].id] = prev[i]
+        var deleted = (cur.deleted || []).slice()
+        var next = []
+        for (var j = 0; j < list.length; j++) {
+            var t = Object.assign({}, list[j])
+            var o = old[t.id]
+            if (!o || o.text !== t.text || o.done !== t.done) t.updated = Date.now()
+            delete old[t.id]
+            next.push(t)
+        }
+        for (var id in old)
+            if (old[id].gid) deleted.push(old[id].gid)
+        cur.todos = next
+        cur.deleted = deleted
+    }
+
+    function setSetting(outputKey, id, key, value) {
+        var values = {}
+        values[key] = value
+        root.setSettings(outputKey, id, values)
     }
 
     function setSettings(outputKey, id, values) {
         var spec = root.findSpec(outputKey, id)
-        if (!spec || !values) return
-        var s = spec.settings ? root._clone(spec.settings) : {}
-        for (var k in values)
-            s[k] = values[k]
-        spec.settings = s
-        root.settingsStamp++
-        root.save()
+        if (spec && values) root._write(spec, values)
     }
 
     function resetSettings(outputKey, id) {
         var spec = root.findSpec(outputKey, id)
         if (!spec) return
+        if (root.isShared(spec)) {
+            var next = Object.assign({}, root.shared)
+            var keep = {}
+            // Reset restores options, not your tasks or a running timer.
+            var key = root.sharedKey(spec)
+            var cur = next[key] || {}
+            if (cur.todos) { keep.todos = cur.todos; keep.deleted = cur.deleted }
+            next[key] = keep
+            root.shared = next
+        }
         spec.settings = {}
         root.settingsStamp++
         root.save()
     }
+
+    // Seeds shared settings from per-display ones saved before syncing
+    // existed. Todo lists are merged so nothing is lost.
+    function _migrateShared() {
+        var next = Object.assign({}, root.shared)
+        var changed = false
+        for (var key in root.outputs) {
+            var list = root.outputs[key] || []
+            for (var i = 0; i < list.length; i++) {
+                var spec = list[i]
+                if (!spec || !root.isShared(spec)) continue
+                // A provider once shared per type now lives on each widget.
+                var base = next[spec.type]
+                if (base && base.provider !== undefined && root.sharedKey(spec) !== spec.type) {
+                    if (!spec.settings || spec.settings.provider === undefined)
+                        spec.settings = Object.assign({}, spec.settings || {}, { provider: base.provider })
+                    changed = true
+                }
+                var own = spec.settings
+                if (!own || !Object.keys(own).some(k => root.ownKeys.indexOf(k) === -1)) continue
+                if (spec.type === "todo" && own.todos) {
+                    var cur = next.todo || { todos: [] }
+                    var ids = cur.todos.map(t => t.id)
+                    for (var j = 0; j < own.todos.length; j++)
+                        if (ids.indexOf(own.todos[j].id) === -1) cur.todos.push(own.todos[j])
+                    next.todo = cur
+                } else if (!next[root.sharedKey(spec)]) {
+                    var seeded = root._clone(own)
+                    for (var d = 0; d < root.ownKeys.length; d++) delete seeded[root.ownKeys[d]]
+                    next[root.sharedKey(spec)] = seeded
+                }
+                spec.settings = root._own(own)
+                changed = true
+            }
+        }
+        // Per-type buckets for provider widgets are superseded by type:provider ones.
+        for (var t in next)
+            if (t.indexOf(":") === -1 && (root.catalogEntry(t).options || []).some(o => o.key === "provider")) {
+                delete next[t]
+                changed = true
+            }
+        if (!changed) return
+        root.shared = next
+        root.save()
+    }
+
+    // Two-way sync of the shared todo list with Google Tasks (@default list)
+    // through lib/gtasks.py, which shells out to `gws`.
+    QtObject {
+        id: gtasks
+        property var sent: []
+        function kick() { gtasksDebounce.restart() }
+        function run() {
+            var todo = root.shared.todo || {}
+            if (todo.google === false || gtasksProc.running) return
+            gtasks.sent = (todo.todos || []).map(t => t.id)
+            gtasksProc.command = ["python3", Qt.resolvedUrl("gtasks.py").toString().replace("file://", ""),
+                JSON.stringify({ todos: todo.todos || [], deleted: todo.deleted || [] })]
+            gtasksProc.running = true
+        }
+        function apply(raw) {
+            var res
+            try { res = JSON.parse(raw) } catch (e) { console.warn("[gtasks] bad output:", raw); return }
+            var cur = root._clone(root.shared.todo || {})
+            // Keep anything added locally while the sync was in flight.
+            var extra = (cur.todos || []).filter(t => gtasks.sent.indexOf(t.id) === -1)
+            cur.todos = res.todos.concat(extra)
+            cur.deleted = (cur.deleted || []).filter(g => res.deleted.indexOf(g) === -1)
+            var next = Object.assign({}, root.shared)
+            next.todo = cur
+            root.shared = next
+            root.settingsStamp++
+            root.save()
+        }
+    }
+
+    Process {
+        id: gtasksProc
+        stdout: StdioCollector { onStreamFinished: if (text.trim()) gtasks.apply(text) }
+        stderr: StdioCollector { onStreamFinished: if (text.trim()) console.warn("[gtasks]", text) }
+    }
+
+    Timer { id: gtasksDebounce; interval: 1500; onTriggered: gtasks.run() }
+    Timer { interval: 60000; running: root.ready; repeat: true; triggeredOnStart: true; onTriggered: gtasks.run() }
 
     function savePack(outputKey, screenW, screenH) {
         var widgets = root._clone(root.widgetsOn(outputKey))
@@ -333,7 +506,7 @@ Scope {
 
     function _flush() {
         root.suppressLoad = true
-        configFile.setText(JSON.stringify({ outputs: root.outputs }, null, 2) + "\n")
+        configFile.setText(JSON.stringify({ outputs: root.outputs, shared: root.shared }, null, 2) + "\n")
         unsuppressLoad.restart()
     }
 
@@ -342,6 +515,8 @@ Scope {
             var raw = configFile.text()
             if (!raw || raw.length === 0) return
             var d = JSON.parse(raw)
+            if (d && d.shared && typeof d.shared === "object")
+                root.shared = d.shared
             if (d && d.outputs && typeof d.outputs === "object")
                 root.outputs = d.outputs
             else if (d && d.scenes && typeof d.scenes === "object") {
@@ -361,6 +536,7 @@ Scope {
             if (root.suppressLoad)
                 return
             root.load()
+            root._migrateShared()
             var first = !root.ready
             root.ready = true
             root.ensureOutputs()

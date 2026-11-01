@@ -103,8 +103,20 @@ rm -f "$TRIGGER" "$DONE" "$STATUS"
 "$CAVA_LOCK" start >/dev/null 2>&1 || true
 
 mv -f "$RUNTIME/hyprlock.log" "$RUNTIME/hyprlock.prev.log" 2>/dev/null || true
-hyprlock --verbose "${hyprlock_args[@]}" >"$RUNTIME/hyprlock.log" 2>&1 &
-hyprlock_pid=$!
+# Drop the per-poll TRACE spam: a long lock wrote 1.6G of it and filled /run/user.
+# hyprlock 0.9.6 hits "wl_display#1: error 0: invalid object N" when an output
+# is removed while it builds that output's lock surface (lid/dock/FALLBACK
+# churn), then hangs instead of exiting. Kill it on that line; the wait loop
+# below relaunches it into the still-locked session.
+start_hyprlock() {
+  hyprlock --verbose "${hyprlock_args[@]}" > >(awk '
+    /got poll event/ { next }
+    { print; fflush() }
+    /wl_display#[0-9]+: error/ { system("pkill -x hyprlock") }
+  ' >>"$RUNTIME/hyprlock.log") 2>&1 &
+  hyprlock_pid=$!
+}
+start_hyprlock
 
 stop_biopass() {
   rm -f "$ARMED" "$TRIGGER"
@@ -157,13 +169,20 @@ if (( ! no_biopass )); then
   waiter_pid=$!
 fi
 
-status=0
-wait "$hyprlock_pid" || status=$?
-# Keep crashed sessions' logs; hyprlock.log only survives two more locks.
-if (( status != 0 )); then
-  mkdir -p "$HOME/.cache/hyprlock-crashes"
-  cp "$RUNTIME/hyprlock.log" "$HOME/.cache/hyprlock-crashes/$(date +%F_%H%M%S)-exit$status.log" 2>/dev/null || true
-fi
+count_wl_errors() { grep -cE 'wl_display#[0-9]+: error' "$RUNTIME/hyprlock.log" 2>/dev/null || true; }
+for relaunch in 0 1 2 3 4 5; do
+  status=0
+  wait "$hyprlock_pid" || status=$?
+  # Keep crashed sessions' logs; hyprlock.log only survives two more locks.
+  if (( status != 0 )); then
+    mkdir -p "$HOME/.cache/hyprlock-crashes"
+    cp "$RUNTIME/hyprlock.log" "$HOME/.cache/hyprlock-crashes/$(date +%F_%H%M%S)-exit$status.log" 2>/dev/null || true
+  fi
+  # Relaunch only for the hotplug race; a normal unlock or other exit ends here.
+  (( $(count_wl_errors) > relaunch )) || break
+  sleep 0.3
+  start_hyprlock
+done
 stop_biopass
 if [[ -n "$waiter_pid" ]]; then
   wait "$waiter_pid" 2>/dev/null || true

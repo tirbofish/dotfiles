@@ -29,6 +29,8 @@ local function apply(id, want)
                 name = "workspace-follow-float-" .. id,
                 match = { workspace = tostring(id) },
                 float = true,
+                -- ponytail: TopBar.qml is 40px. max_size expressions have no reserved-area variable.
+                max_size = { "monitor_w", "monitor_h-40" },
             })
         else
             rules[id]:set_enabled(true)
@@ -76,4 +78,6 @@ return {
     vote = vote,
     sync = sync,
     schedule = schedule,
+    -- Drop the float rule before unfloating, or it re-floats the window.
+    set = apply,
 }

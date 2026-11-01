@@ -20,7 +20,7 @@ stop() {
 
 _run() {
   printf '%s\n' "$$" >"$PIDFILE"
-  trap 'kill 0' EXIT TERM INT
+  trap 'trap - EXIT TERM INT; kill 0' EXIT TERM INT
   local -a bars=(' ' '▁' '▂' '▃' '▄' '▅' '▆' '▇' '█')
   stdbuf -oL cava -p "$CONF" | while IFS= read -r line; do
     rendered=""

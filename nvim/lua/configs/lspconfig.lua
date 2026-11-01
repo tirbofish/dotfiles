@@ -9,7 +9,7 @@ vim.lsp.config("clangd", {
   },
 })
 
-local servers = { "html", "cssls", "clangd", "zls", "rust_analyzer" }
+local servers = { "html", "cssls", "clangd", "zls", "rust_analyzer", "tinymist", "texlab" }
 vim.lsp.enable(servers)
 
 -- read :h vim.lsp.config for changing options of lsp servers

@@ -26,7 +26,7 @@ PanelWindow {
         ? Lib.WidgetService.catalogEntry(selectedSpec.type) : ({})
     readonly property var selectedSettings: {
         var _ = Lib.WidgetService.settingsStamp
-        return selectedSpec && selectedSpec.settings ? selectedSpec.settings : ({})
+        return Lib.WidgetService.settingsFor(selectedSpec)
     }
     readonly property var selectedOptions: selectedEntry.options || []
     readonly property bool imageSettings: !!selectedSpec && selectedSpec.type === "image"
@@ -301,7 +301,7 @@ PanelWindow {
                         text: win.imageSource
                             ? (win.selectedSettings.folderMode ? "Folder: " : "Image: ")
                                 + decodeURIComponent(win.imageSource.replace(/\/$/, "").split("/").pop())
-                            : "No image or folder selected"
+                            : "Slideshow: ~/Pictures"
                         elide: Text.ElideMiddle
                         font.family: win.theme.textFont
                         font.pixelSize: 11

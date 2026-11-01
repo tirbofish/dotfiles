@@ -496,6 +496,8 @@ hl.config({
     },
     misc = {
         vrr                      = 1,
+        -- lock.sh relaunches hyprlock after it dies on an output hotplug.
+        allow_session_lock_restore = true,
         disable_hyprland_logo    = true,
         disable_splash_rendering = true,
         force_default_wallpaper  = 0,
@@ -620,10 +622,11 @@ hl.layer_rule({ match = { namespace = "dock-genie" }, no_anim = true })
 hl.bind(mod .. " + SPACE", hl.dsp.exec_cmd(vicinae .. " toggle"), { description = "Vicinae" })
 hl.bind(mod .. " + R", hl.dsp.global("quickshell:drawerToggle"))  -- Workspace Drawer
 hl.bind(mod .. " + SHIFT + W", hl.dsp.global("quickshell:widgetEdit")) -- Desktop widgets
+hl.bind(mod .. " + SHIFT + R", hl.dsp.exec_cmd("pkill -x qs; pkill -x quickshell; sleep 0.5; qs"), { description = "Restart quickshell" })
 
 -- Apps
 hl.bind(mod .. " + Q", hl.dsp.exec_cmd("kitty"))
-hl.bind(mod .. " + E", hl.dsp.exec_cmd("nautilus"))
+hl.bind(mod .. " + E", hl.dsp.exec_cmd("thunar"))
 -- hl.bind(mod .. " + R", hl.dsp.exec_cmd(home .. "/.config/rofi/rofi_wide.sh")) -- if you prefer rofi
 hl.bind(mod .. " + B", hl.dsp.exec_cmd("brave-origin"))
 hl.bind(mod .. " + S", hl.dsp.exec_cmd("lens --no-decorations --sniper"))
@@ -723,6 +726,7 @@ hl.bind(mod .. " + F", function()
     if not win then return end
     if win.floating then
         save_float_geom(win)
+        workspace_float.set(workspace_id_of(win), false)
         hl.dispatch(hl.dsp.window.float({ action = "unset" }))
     else
         hl.dispatch(hl.dsp.window.float({ action = "set" }))
@@ -855,6 +859,7 @@ hl.bind(mod .. " + L", function()
             if not w.floating then any_tiled = true end
         end
     end
+    if not any_tiled then workspace_float.set(wsid, false) end
     for _, w in ipairs(wins) do
         local sel = window_selector(w)
         if any_tiled then
@@ -862,7 +867,12 @@ hl.bind(mod .. " + L", function()
             if not w.floating then
                 local g = window_geom(w)
                 hl.dispatch(hl.dsp.window.float({ action = "set", window = sel }))
-                if not restore_float_geom(w) then place_floating(g.x, g.y, g.w, g.h, w) end
+                -- Shrink about the tile's centre so floated windows don't still fill it.
+                local k = 0.85
+                local nw, nh = math.floor(g.w * k), math.floor(g.h * k)
+                if not restore_float_geom(w) then
+                    place_floating(g.x + (g.w - nw) // 2, g.y + (g.h - nh) // 2, nw, nh, w)
+                end
             end
         else
             save_float_geom(w)
@@ -1027,6 +1037,29 @@ hl.bind(mod .. " + SHIFT + M", function()
     schedule_workspace_span()
 end, { description = "Swap workspace with next display" })
 
+-- Send the focused window to the display on the left/right, following it.
+-- Direction is from the window's own monitor: the "active" monitor is wherever
+-- the cursor is, and no_warps keeps the cursor behind.
+for key, sign in pairs({ left = -1, right = 1 }) do
+    hl.bind(mod .. " + SHIFT + " .. key, function()
+        local win = hl.get_active_window()
+        local cur = win and win.monitor
+        if not cur then return end
+        local other
+        for _, m in ipairs(hl.get_monitors()) do
+            local d = (m.x - cur.x) * sign
+            if d > 0 and (not other or d < (other.x - cur.x) * sign) then other = m end
+        end
+        local ws = other and other.active_workspace
+        if not ws then return end
+        local sel = window_selector(win)
+        hl.dispatch(hl.dsp.window.move({ workspace = ws.id, window = sel }))
+        hl.dispatch(hl.dsp.focus({ window = sel }))
+        local area = monitor_work_area(other)
+        hl.dispatch(hl.dsp.cursor.move({ x = math.floor(area.x + area.w / 2), y = math.floor(area.y + area.h / 2) }))
+    end, { description = "Move window to " .. key .. " display" })
+end
+
 for i = 1, 10 do
     hl.bind(mod .. " + " .. tostring(i % 10), function()
         local mon = hl.get_active_monitor()
@@ -1100,6 +1133,7 @@ end, { timeout = 500, type = "repeat" })
 -- Window Rules
 -- =========================================================================
 hl.window_rule({ match = { class = "^kitty$" }, size = "950 550", center = true, rounding = 8, opacity = "0.9 0.9" })
+hl.window_rule({ match = { class = "^md\\.obsidian\\.Obsidian$" }, opacity = "0.9 0.9" })
 hl.window_rule({
     match = { title = "^(HyprEmoji)$" },
     float = true, center = true, size = "440 560", rounding = 12,

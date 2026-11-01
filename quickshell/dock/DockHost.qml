@@ -162,17 +162,23 @@ Item {
   }
 
   // Window geometry (lastIpcObject) only updates on refresh; smart hide needs it current.
+  // Lid close/open re-adds eDP-1 and renumbers workspaces, which leaves the
+  // monitor's activeWorkspace null until monitors/workspaces refresh too.
   Connections {
     target: Hyprland
     function onRawEvent(event) {
-      if (/^(openwindow|closewindow|movewindow|changefloatingmode|fullscreen|workspace|focusedmon|activewindowv2)/.test(event.name))
+      if (/^(openwindow|closewindow|movewindow|changefloatingmode|fullscreen|workspace|focusedmon|activewindowv2|monitor|createworkspace|destroyworkspace|moveworkspace|renameworkspace)/.test(event.name))
         refreshSoon.restart()
     }
   }
   Timer {
     id: refreshSoon
     interval: 120
-    onTriggered: Hyprland.refreshToplevels()
+    onTriggered: {
+      Hyprland.refreshMonitors()
+      Hyprland.refreshWorkspaces()
+      Hyprland.refreshToplevels()
+    }
   }
   // ponytail: dragging a floating window sends no event, so poll slowly while
   // auto-hide is on; drop this if Hyprland grows a window-geometry event.
@@ -190,6 +196,22 @@ Item {
     }
     function restore(address: string): void {
       root.restore(address)
+    }
+    function debugState(): string {
+      var out = []
+      for (var i = 0; i < dockVariants.instances.length; ++i) {
+        var d = dockVariants.instances[i]
+        var mon = Hyprland.monitorFor(d.screen)
+        out.push(JSON.stringify({
+          screen: d.screen ? d.screen.name : null,
+          geom: d.screen ? [d.screen.x, d.screen.y, d.screen.width, d.screen.height] : null,
+          mon: mon ? mon.name : null,
+          aw: d.activeWorkspaceId, rawAw: mon && mon.activeWorkspace ? mon.activeWorkspace.id : null,
+          tops: (Hyprland.toplevels.values || []).map(t => [t.workspace ? t.workspace.id : null, t.workspace && t.workspace.id === d.activeWorkspaceId, t.lastIpcObject ? [t.lastIpcObject.at, t.lastIpcObject.size, t.lastIpcObject.hidden] : null]),
+          inWay: d.windowInTheWay, shown: d.dockShown, bg: [d.width, d.height]
+        }))
+      }
+      return out.join("\n")
     }
   }
 

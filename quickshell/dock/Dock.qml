@@ -75,12 +75,18 @@ PanelWindow {
   }
   // This screen's workspace. Only its windows (plus minimized ones, which
   // belong everywhere) count as "running" here.
+  // monitorFor() is a plain call, so the binding would keep the HyprlandMonitor
+  // it first got. Lid/suspend removes and re-adds eDP-1 as a new object, and the
+  // old one's activeWorkspace stays null forever (dock never hides). Reading
+  // Hyprland.monitors.values re-runs this when the monitor list changes.
   readonly property var activeWorkspace: {
+    var monitors = Hyprland.monitors.values
     var mon = Hyprland.monitorFor(root.screen)
     return mon ? mon.activeWorkspace : null
   }
+  readonly property int activeWorkspaceId: activeWorkspace ? activeWorkspace.id : -1
   function isHere(toplevel) {
-    return isMinimized(toplevel) || (!!toplevel.workspace && toplevel.workspace === activeWorkspace)
+    return isMinimized(toplevel) || (!!toplevel.workspace && toplevel.workspace.id === activeWorkspaceId)
   }
   readonly property var groupsHere: {
     var out = {}
@@ -95,14 +101,14 @@ PanelWindow {
   // Smart hide: the dock steps aside only while a window on this workspace
   // overlaps it; an empty workspace (or windows clear of it) keeps it shown.
   readonly property bool windowInTheWay: {
-    if (!autoHide || !activeWorkspace) return false
+    if (!autoHide || activeWorkspaceId < 0) return false
     var top = root.screen.y + root.screen.height - dockBackground.height - edgeMargin
     var left = root.screen.x + (root.screen.width - dockBackground.width) / 2
     var right = left + dockBackground.width
     var list = Hyprland.toplevels.values || []
     for (var i = 0; i < list.length; ++i) {
       var t = list[i]
-      if (t.workspace !== activeWorkspace) continue
+      if (!t.workspace || t.workspace.id !== activeWorkspaceId) continue
       var ipc = t.lastIpcObject
       if (!ipc || !ipc.at || !ipc.size || ipc.hidden) continue
       if (ipc.at[1] + ipc.size[1] > top && ipc.at[0] < right && ipc.at[0] + ipc.size[0] > left)

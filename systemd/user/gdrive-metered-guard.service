@@ -1,0 +1,10 @@
+[Unit]
+Description=Keep Google Drive mount off metered connections
+
+[Service]
+ExecStart=%h/.local/bin/gdrive-metered-guard
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

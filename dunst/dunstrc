@@ -52,24 +52,24 @@
     separator_color = frame
 
 [urgency_low]
-    background = "#1b1b1bee"
-    foreground = "#c2c2c2"
-    frame_color = "#878787"
-    highlight = "#686868"
+    background = "#282532ee"
+    foreground = "#c3c2c5"
+    frame_color = "#605a6f"
+    highlight = "#847999"
     timeout = 3
 
 [urgency_normal]
-    background = "#1b1b1bee"
-    foreground = "#c2c2c2"
-    frame_color = "#686868"
-    highlight = "#686868"
+    background = "#282532ee"
+    foreground = "#c3c2c5"
+    frame_color = "#847999"
+    highlight = "#847999"
     timeout = 5
 
 [urgency_critical]
-    background = "#1b1b1bee"
-    foreground = "#c2c2c2"
-    frame_color = "#383838"
-    highlight = "#383838"
+    background = "#282532ee"
+    foreground = "#c3c2c5"
+    frame_color = "#645A77"
+    highlight = "#645A77"
     timeout = 0
 
 # --- RULES ---

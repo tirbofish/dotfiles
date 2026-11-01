@@ -7,7 +7,33 @@ import "../lib" as Lib
 Item {
     id: root
     required property QtObject theme
-    readonly property var calendar: Lib.ProtonCalendar
+    property string provider: "Proton"
+    readonly property string key: provider.toLowerCase()
+    property string usedKey: ""
+    onKeyChanged: claim()
+    Component.onCompleted: claim()
+    Component.onDestruction: if (usedKey) Lib.CalendarService.use(usedKey, -1)
+    function claim() {
+        if (usedKey === key) return
+        if (usedKey) Lib.CalendarService.use(usedKey, -1)
+        usedKey = key
+        Lib.CalendarService.use(key, 1)
+    }
+
+    // This widget's slice of CalendarService: just the sources it uses.
+    readonly property var calendar: QtObject {
+        readonly property var sources: Lib.CalendarService.sourcesFor(root.key)
+        readonly property date now: Lib.CalendarService.now
+        readonly property var events: sources.reduce((all, s) => all.concat(s.events), []).sort((a, b) => a.start - b.start)
+        readonly property var upcoming: events.filter(e => e.end > now.getTime())
+        readonly property var colors: sources.reduce((all, s) => Object.assign(all, s.colors), {})
+        readonly property string error: sources.filter(s => s.error).map(s => s.error).join(" ")
+        readonly property bool busy: sources.some(s => s.busy)
+        readonly property var updatedAt: sources.every(s => s.updatedAt)
+            ? sources.map(s => s.updatedAt).sort((a, b) => a - b)[0] : null
+        readonly property string webUrl: root.key === "google" ? "https://calendar.google.com" : "https://calendar.proton.me"
+        function refresh() { Lib.CalendarService.refresh(root.key) }
+    }
     readonly property var next: calendar.upcoming.length ? calendar.upcoming[0] : null
     readonly property int todayCount: calendar.upcoming.filter(e => dayLabel(e.start) === "Today").length
 
@@ -22,7 +48,7 @@ Item {
         value: Qt.formatDate(root.calendar.now, "d")
         label: root.todayCount ? root.todayCount + " today" : "free"
         clickable: true
-        onClicked: Qt.openUrlExternally("https://calendar.proton.me")
+        onClicked: Qt.openUrlExternally(root.calendar.webUrl)
     }
 
     // N×1: just what's next.
@@ -158,7 +184,7 @@ Item {
             LinkButton {
                 visible: !look.column
                 text: "Open ↗"
-                onActivated: Qt.openUrlExternally("https://calendar.proton.me")
+                onActivated: Qt.openUrlExternally(root.calendar.webUrl)
             }
         }
 

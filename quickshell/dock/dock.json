@@ -10,12 +10,11 @@
   "autoHide": true,
   "clickAction": "focus-or-launch",
   "pinned": [
-    "org.gnome.Nautilus",
+    "thunar",
     "brave-origin",
     "kitty",
     "spotify",
     "obsidian",
-    "com.anthropic.Claude",
-    "anki"
+    "com.anthropic.Claude"
   ]
 }
