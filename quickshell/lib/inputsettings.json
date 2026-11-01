@@ -8,5 +8,5 @@
   "touchpadNaturalScroll": true,
   "touchpadTapToClick": true,
   "touchpadDisableWhileTyping": true,
-  "electronScroll": 0.1
+  "electronScroll": 0.2
 }

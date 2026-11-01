@@ -174,6 +174,7 @@ local function lid_closed()
 end
 
 local function set_touchscreen_enabled(enabled)
+    if not features.surface then return end
     hl.config({ input = { touchdevice = { enabled = enabled } } })
     hl.exec_cmd(scripts .. "/lid-touchscreen.sh " .. (enabled and "on" or "off"))
 end
@@ -432,7 +433,7 @@ hl.config({
     cursor = {
         -- AQ_NO_ATOMIC + Intel hw cursors flicker/vanish across mixed-scale
         -- monitors. 1 = software cursor.
-        no_hardware_cursors = 1,
+        no_hardware_cursors = (features.surface or features.nvidia) and 1 or 0,
         no_warps = true,
     },
     dwindle = {
@@ -486,10 +487,10 @@ hl.config({
         -- Closed lid presses the keyboard into the panel; keep the digitizer
         -- off then, and pin remaining events to eDP-1 so they cannot leak
         -- onto a docked display. Live lid binds update this after parse.
-        touchdevice = {
+        touchdevice = features.surface and {
             enabled = not lid_closed(),
             output  = "eDP-1"
-        }
+        } or nil
     },
     xwayland = {
         force_zero_scaling = true

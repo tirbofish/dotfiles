@@ -49,13 +49,14 @@ DID_INSTALL=0
 
 # Hardware features, chosen in choose_features (defaults come from detection).
 SURFACE=0
+SURFACE_MODE="auto"
 NVIDIA=0
 BIOMETRIC=0
 LAPTOP_POWER=0
 
 usage() {
     cat <<'EOF'
-Usage: ./install.sh [--terminal-only] [--yes] [--dry-run]
+Usage: ./install.sh [--terminal-only] [--non-surface|--surface] [--yes] [--dry-run]
        curl -fsSL https://raw.githubusercontent.com/tirbofish/dotfiles/main/install.sh | sh
 
 Without options, choose the full Hyprland setup or the shared terminal setup
@@ -65,6 +66,8 @@ When piped, the repository is cloned to $DOTFILES_DIR
 (default ~/.local/share/tirbofish-dotfiles) and linked from there.
 
   --terminal-only  Skip Linux desktop packages and configuration.
+  --non-surface    Install without Microsoft Surface tweaks (alias: --no-surface).
+  --surface        Force Microsoft Surface tweaks on.
   --yes            Accept default answers.
   --dry-run        Print changes without making them.
   -h, --help       Show this help.
@@ -185,8 +188,14 @@ choose_features() {
     compgen -G '/sys/class/power_supply/BAT*' >/dev/null && has_battery=1
 
     log "Hardware features"
-    ask "Apply Microsoft Surface tweaks (dock modeset workaround, speaker DSP)?" \
-        "$(yes_no "$is_surface")" && SURFACE=1
+    case "$SURFACE_MODE" in
+        no)  SURFACE=0 ;;
+        yes) SURFACE=1 ;;
+        *)
+            ask "Apply Microsoft Surface tweaks (iptsd, dock modeset workaround, lid touchscreen guard, speaker DSP)?" \
+                "$(yes_no "$is_surface")" && SURFACE=1
+            ;;
+    esac
     if has_nvidia_gpu; then
         printf 'An NVIDIA GPU was detected.\n' >&2
         ask "Install the NVIDIA driver and Hyprland's NVIDIA settings?" yes && NVIDIA=1
@@ -228,7 +237,7 @@ ensure_yay() {
 }
 
 install_arch_aur() {
-    local packages=(brave-origin-bin)
+    local packages=(brave-origin-bin ttf-monocraft-nerd)
 
     [[ "$PROFILE" == "desktop" ]] && packages+=(
         grimblast-git snappy-switcher python-pywal16 hyprshade pyprland hypremoji
@@ -238,7 +247,7 @@ install_arch_aur() {
     if ask "Install the extra AUR apps (editors, browsers, Spotify, security tools, ...)?" yes; then
         packages+=(
             # editors / dev
-            visual-studio-code-bin cursor-bin antigravity jetbrains-toolbox
+            visual-studio-code-bin cursor-bin antigravity opencode-desktop-bin jetbrains-toolbox
             github-copilot-bin claude-code claude-desktop codexbar-cli t3code-bin
             google-cloud-cli google-colab-cli jdk17-temurin lazysql lmstudio-bin
             termius debtap pacdep
@@ -261,21 +270,33 @@ install_arch_aur() {
 
 install_arch() {
     local packages=(
-        base-devel git curl zsh kitty starship fastfetch neovim fzf jq fontconfig
+        base-devel git curl unzip ripgrep zsh kitty starship fastfetch neovim
+        clang fzf jq fontconfig typst
+        texlive-basic texlive-latex texlive-latexrecommended
+        texlive-fontsrecommended texlive-binextra
     )
 
     if [[ "$PROFILE" == "desktop" ]]; then
         packages+=(
             hyprland hyprpm hypridle hyprlock hyprpicker hyprpolkitagent quickshell
             awww dunst mako rofi nautilus mpv
-            pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber
-            pavucontrol pamixer networkmanager bluez bluez-utils blueman
-            brightnessctl playerctl grim slurp swappy wl-clipboard libnotify
-            python khal vdirsyncer polkit polkit-gnome
-            xdg-desktop-portal-hyprland kvantum qt6ct thunar xfconf
+            pipewire pipewire-alsa pipewire-jack pipewire-pulse wireplumber libpulse
+            pavucontrol pamixer networkmanager network-manager-applet bluez bluez-utils blueman
+            brightnessctl playerctl grim slurp swappy wl-clipboard cliphist libnotify
+            python python-dbus python-gobject khal vdirsyncer polkit polkit-gnome
+            upower inotify-tools
+            xdg-desktop-portal-hyprland xdg-desktop-portal-gtk kvantum qt6ct thunar xfconf
+            kdeconnect kanshi rclone fuse3 obsidian
             zathura zathura-pdf-poppler waybar papirus-icon-theme
-            ttf-jetbrains-mono-nerd cava
+            ttf-jetbrains-mono-nerd ttf-nerd-fonts-symbols ttf-nerd-fonts-symbols-mono
+            ttf-dejavu noto-fonts noto-fonts-emoji cava
         )
+        if (( SURFACE )); then
+            packages+=(iptsd)
+            if pacman-conf --repo=linux-surface >/dev/null 2>&1; then
+                packages+=(linux-surface linux-surface-headers)
+            fi
+        fi
     fi
 
     if [[ "$PROFILE" == "desktop" ]] && (( NVIDIA )); then
@@ -352,8 +373,8 @@ configure_void_session() {
 install_void() {
     local nvidia_pkg
     local packages=(
-        base-devel git curl zsh kitty starship fastfetch neovim fzf jq fontconfig
-        unzip xz
+        base-devel git curl zsh kitty starship fastfetch neovim clang fzf jq
+        fontconfig unzip xz ripgrep typst
     )
 
     if [[ "$PROFILE" == "desktop" ]]; then
@@ -363,11 +384,14 @@ install_void() {
             hyprland hypridle hyprlock hyprpicker hyprpolkitagent quickshell
             xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
             awww dunst mako rofi nautilus mpv
-            pipewire wireplumber pavucontrol pamixer NetworkManager bluez blueman
-            brightnessctl playerctl grim slurp swappy wl-clipboard libnotify
+            pipewire wireplumber pulseaudio-utils pavucontrol pamixer
+            NetworkManager network-manager-applet bluez blueman upower
+            brightnessctl playerctl grim slurp swappy wl-clipboard cliphist libnotify
             python3 python3-dbus python3-gobject pywal khal vdirsyncer
-            polkit-gnome kvantum qt6ct Thunar xfconf zathura zathura-pdf-poppler
-            Waybar papirus-icon-theme nerd-fonts-symbols-ttf cava inotify-tools
+            polkit-gnome kvantum qt6ct Thunar xfconf kdeconnect kanshi
+            rclone fuse3 zathura zathura-pdf-poppler
+            Waybar papirus-icon-theme nerd-fonts-symbols-ttf dejavu-fonts-ttf
+            noto-fonts-ttf noto-fonts-emoji cava inotify-tools
         )
         (( BIOMETRIC )) && packages+=(pam-devel)
     fi
@@ -469,8 +493,9 @@ install_snappy_switcher_from_source() {
 
 install_ubuntu() {
     local packages=(
-        build-essential git curl zsh kitty starship fastfetch neovim fzf jq
-        fontconfig unzip
+        build-essential git curl zsh kitty starship fastfetch neovim clang clangd
+        fzf jq fontconfig unzip ripgrep typst
+        texlive-latex-base texlive-latex-recommended texlive-fonts-recommended latexmk
     )
 
     run sudo apt-get update
@@ -482,13 +507,15 @@ install_ubuntu() {
 
     install_ubuntu_candidates \
         hyprland hypridle hyprlock hyprpicker quickshell awww dunst mako rofi \
-        nautilus firefox mpv pipewire pipewire-pulse wireplumber pavucontrol pamixer \
-        network-manager bluez bluez-tools blueman rfkill upower brightnessctl \
-        playerctl grim slurp swappy wl-clipboard libnotify-bin \
+        nautilus firefox mpv pipewire pipewire-pulse wireplumber pulseaudio-utils \
+        pavucontrol pamixer network-manager network-manager-gnome bluez bluez-tools \
+        blueman rfkill upower inotify-tools brightnessctl playerctl grim slurp \
+        swappy wl-clipboard cliphist libnotify-bin python3 python3-dbus python3-gi \
         'pywal|python3-pywal' khal vdirsyncer policykit-1 policykit-1-gnome \
-        xdg-desktop-portal-hyprland kvantum qt6ct thunar xfconf zathura \
-        zathura-pdf-poppler waybar papirus-icon-theme fonts-jetbrains-mono \
-        cava
+        xdg-desktop-portal-hyprland xdg-desktop-portal-gtk kvantum qt6ct thunar \
+        xfconf kdeconnect kanshi rclone fuse3 zathura zathura-pdf-poppler waybar \
+        papirus-icon-theme fonts-jetbrains-mono fonts-dejavu-core fonts-noto-core \
+        fonts-noto-color-emoji cava
     (( LAPTOP_POWER )) && install_ubuntu_candidates auto-cpufreq
 
     (( NVIDIA )) && run sudo ubuntu-drivers install
@@ -564,8 +591,8 @@ install_macos() {
     install_homebrew
     configure_homebrew_path
 
-    run "$BREW" install zsh starship fastfetch neovim fzf jq git mpv
-    run "$BREW" install --cask kitty font-jetbrains-mono-nerd-font font-inter font-manrope
+    run "$BREW" install zsh starship fastfetch neovim ripgrep fzf jq git mpv typst
+    run "$BREW" install --cask kitty font-jetbrains-mono-nerd-font font-monocraft-nerd-font font-inter font-manrope
 }
 
 install_packages() {
@@ -610,30 +637,48 @@ link_item() {
 }
 
 link_configurations() {
-    local items=(kitty fastfetch nvim starship.toml zsh)
+    local item unit
+    local items=(kitty fastfetch nvim clangd gh nyaa spotatui starship.toml zsh)
 
     if [[ "$PROFILE" == "desktop" ]]; then
         items+=(
-            hypr hyprpolkitagent quickshell rofi dunst mako waybar Kvantum
-            qt6ct wireplumber snappy-switcher Thunar zathura color-schemes
+            hypr hyprpolkitagent quickshell themes rofi dunst mako waybar
+            Kvantum qt6ct gtk-3.0 gtk-4.0 xfce4 kcminputrc kdeglobals
+            wireplumber snappy-switcher Thunar zathura color-schemes
         )
         # Only holds the Surface Laptop 4 speaker filter chain.
-        (( SURFACE )) && items+=(pipewire)
+        if (( SURFACE )); then
+            items+=(pipewire)
+        elif [[ -L "$CONFIG_HOME/pipewire" ]]; then
+            run rm -f "$CONFIG_HOME/pipewire"
+        fi
     fi
 
     run mkdir -p "$CONFIG_HOME"
     for item in "${items[@]}"; do
+        [[ -e "$ROOT/$item" ]] || continue
         link_item "$item"
     done
+
+    if [[ "$PROFILE" == "desktop" && -d "$ROOT/systemd/user" ]]; then
+        run mkdir -p "$CONFIG_HOME/systemd/user"
+        for unit in "$ROOT"/systemd/user/*.service; do
+            [[ -f "$unit" ]] || continue
+            link_item "systemd/user/$(basename -- "$unit")"
+        done
+    fi
 }
 
 install_bundled_fonts() {
-    local font destination
+    local font destination monocraft_dir
+    local monocraft_url="https://github.com/IdreesInc/Monocraft/releases/latest/download/Monocraft-nerd-fonts-patched.ttc"
 
     if [[ "$PLATFORM" == "macos" ]]; then
         destination="$HOME/Library/Fonts"
+        monocraft_dir="$destination"
     else
         destination="$HOME/.local/share/fonts/CMU-Typewriter"
+        monocraft_dir="$HOME/.local/share/fonts/Monocraft"
     fi
 
     run mkdir -p "$destination"
@@ -642,9 +687,36 @@ install_bundled_fonts() {
         run install -m 644 "$font" "$destination/$(basename -- "$font")"
     done
 
+    if [[ -z "$(fc-list : family 2>/dev/null | grep -i monocraft || true)" ]] &&
+        [[ ! -f "$monocraft_dir/Monocraft-nerd-fonts-patched.ttc" ]]; then
+        log "Installing Monocraft Nerd Font"
+        run mkdir -p "$monocraft_dir"
+        if (( DRY_RUN )); then
+            printf '+ curl -fsSL %q -o %q\n' "$monocraft_url" "$monocraft_dir/Monocraft-nerd-fonts-patched.ttc"
+        else
+            curl -fsSL "$monocraft_url" -o "$monocraft_dir/Monocraft-nerd-fonts-patched.ttc" ||
+                warn "Could not download Monocraft Nerd Font."
+        fi
+    fi
+
     if command -v fc-cache >/dev/null 2>&1; then
         run fc-cache -f "$destination"
+        if [[ "$monocraft_dir" != "$destination" && -d "$monocraft_dir" ]]; then
+            run fc-cache -f "$monocraft_dir"
+        fi
     fi
+}
+
+build_hypr_plugins() {
+    local plugin_dir="$ROOT/hypr/plugins/hypr-minimize"
+
+    [[ -f "$plugin_dir/Makefile" ]] || return 0
+    if ! command -v pkg-config >/dev/null 2>&1 ||
+        ! pkg-config --exists hyprland pixman-1 libdrm hyprutils 2>/dev/null; then
+        warn "Hyprland plugin headers are not installed; skipping hypr-minimize build."
+        return 0
+    fi
+    run make -C "$plugin_dir"
 }
 
 ensure_kitty_theme() {
@@ -860,9 +932,9 @@ verify_setup() {
 
     if [[ "$PROFILE" == "desktop" ]]; then
         required+=(
-            hyprctl hypridle hyprlock hyprpicker qs awww dunst rofi mpv
-            pamixer brightnessctl playerctl grimblast swappy wal snappy-switcher
-            nmcli bluetoothctl wpctl pw-dump jq khal vdirsyncer
+            hyprctl hypridle hyprlock hyprpicker qs awww dunst rofi thunar mpv
+            pamixer pactl brightnessctl playerctl grimblast swappy wal cliphist
+            snappy-switcher nmcli bluetoothctl wpctl pw-dump jq khal vdirsyncer
         )
     fi
 
@@ -887,6 +959,8 @@ main() {
     while (($#)); do
         case "$1" in
             --terminal-only) TERMINAL_ONLY=1 ;;
+            --non-surface|--no-surface) SURFACE_MODE="no"; SURFACE=0 ;;
+            --surface) SURFACE_MODE="yes"; SURFACE=1 ;;
             --yes) ASSUME_YES=1 ;;
             --dry-run) DRY_RUN=1 ;;
             -h|--help) usage; return 0 ;;
@@ -913,6 +987,7 @@ main() {
         ensure_kitty_theme
         if [[ "$PROFILE" == "desktop" ]]; then
             write_features
+            build_hypr_plugins
             initialize_desktop_runtime
         fi
     else

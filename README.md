@@ -13,7 +13,8 @@ Biopass face unlock, auto-cpufreq, and the zsh setup (Oh My Zsh +
 Powerlevel10k). Hardware choices land in `hypr/features.lua`.
 
 From a checkout, run `./install.sh` (`--dry-run` to preview, `--yes` for
-defaults). On Void, Hyprland comes from the third-party
+defaults, `--non-surface` to skip Microsoft Surface tweaks). On Void, Hyprland
+comes from the third-party
 [sofijacom/hyprland-void](https://github.com/sofijacom/hyprland-void) repo;
 start it from a TTY with `dbus-run-session start-hyprland`.
 
